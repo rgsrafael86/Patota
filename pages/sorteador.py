@@ -225,7 +225,7 @@ with tab_audit:
                 return 'color: #ff4444; font-weight: bold'
             return 'color: #00ff00;'
             
-        st.dataframe(df_audit.style.applymap(color_status, subset=['Status']), use_container_width=True)
+        st.dataframe(df_audit.style.map(color_status, subset=['Status']), use_container_width=True)
     else:
         st.info("Nenhuma fraude ou sorteio registrado no sistema ainda.")
 
