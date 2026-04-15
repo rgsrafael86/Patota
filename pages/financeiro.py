@@ -150,10 +150,15 @@ if not pendencias.empty:
     cols = st.columns(3)
     for i, row in pendencias.iterrows():
         with cols[i % 3]:
-            st.markdown(f"""<div class="player-card"><div style="color:white; font-weight:bold;">{row['Nome']}</div><div style="color:#888; font-size:12px;">{row['Categoria']} • {row['Mes_Ref']}</div><div class="player-debt">R$ {row['Valor']:.0f}</div></div>""", unsafe_allow_html=True)
+            st.markdown(f"""<div class="player-card"><div style="color:white; font-weight:bold;">{row['Nome']}</div><div style="color:#888; font-size:12px;">{row['Categoria']} • {row['Mes_Ref']}</div><div class="player-debt">⚠️ R$ {row['Valor']:.0f}</div></div>""", unsafe_allow_html=True)
 else: st.success("✅ Ninguém devendo!")
 
 with st.expander("🕵️‍♂️ AUDITORIA DOS CÁLCULOS"):
     df_audit = df_fluxo[['Mes_Ref', 'Nome', 'Tipo', 'Valor', 'Status', 'Efeito_Caixa']].copy().iloc[::-1]
     def highlight_vals(val): return f"color: {'#ccff33' if val > 0 else '#ff4444' if val < 0 else '#444'}; font-weight: bold"
     st.dataframe(df_audit.style.map(highlight_vals, subset=['Efeito_Caixa']).format({'Valor': 'R$ {:.2f}', 'Efeito_Caixa': 'R$ {:.2f}'}), use_container_width=True)
+
+# --- RODAPÉ DE NAVEGAÇÃO ---
+st.markdown("<br>", unsafe_allow_html=True)
+if st.button("🎯 VOLTAR AO SORTEADOR", use_container_width=True):
+    st.switch_page("pages/sorteador.py")

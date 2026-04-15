@@ -67,14 +67,21 @@ def obter_contagem_audit_hoje():
         registros = ler_auditoria_cloud()
         if not registros: return 0, None
         
-        hoje = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=-3))).strftime("%d/%m/%Y")
-        # Filtra registros de hoje
-        regs_hoje = [r for r in registros if str(r.get("Data_Hora", "")).startswith(hoje)]
+        hoje_obj = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=-3)))
+        hoje_str = hoje_obj.strftime("%d/%m/%Y")
+        
+        # Filtra registros de hoje com mais resiliência (ignora zeros à esquerda se necessário e limpa espaços)
+        regs_hoje = []
+        for r in registros:
+            dt_str = str(r.get("Data_Hora", "")).strip()
+            if dt_str.startswith(hoje_str) or dt_str.startswith(hoje_obj.strftime("%#d/%#m/%Y")):
+                regs_hoje.append(r)
         
         if not regs_hoje: return 0, None
         
         # Retorna o total de hoje e o horário do último para o V.A.R.
-        ultimo_horario = regs_hoje[-1].get("Data_Hora", "").split(" ")[1]
+        parts = regs_hoje[-1].get("Data_Hora", "").split(" ")
+        ultimo_horario = parts[1] if len(parts) > 1 else "---"
         return len(regs_hoje), ultimo_horario
     except:
         return 0, None
@@ -325,16 +332,18 @@ with tab_principal:
     if st.button("⚖️ GERAR TIMES", use_container_width=True):
         if len(presentes) < 10: st.error("Mínimo 10 jogadores!")
         else:
-            ratings = obter_ratings_atuais()
-            for v, r in st.session_state.visitantes_ratings.items():
-                if v not in ratings: ratings[v] = r
-            mock_l = [{"nome": p, "rating": ratings.get(p, 1000), "goleiro": False} for p in presentes if p not in goleiros_sel]
-            mock_g = [{"nome": g, "rating": ratings.get(g, 1000), "goleiro": True} for g in goleiros_sel]
-            ta, tb, gap = MatchEngine.balance_teams(mock_l, mock_g)
-            # CHAMA AUDITORIA GLOBAL NA NUVEM
-            num_global = registrar_auditoria_cloud(gap, ta, tb)
-            st.session_state.res_time_a, st.session_state.res_time_b, st.session_state.res_gap = ta, tb, gap
-            st.session_state.num_sorteio_atual = num_global
+            with st.spinner("Consultando V.A.R. Cloud..."):
+                ratings = obter_ratings_atuais()
+                for v, r in st.session_state.visitantes_ratings.items():
+                    if v not in ratings: ratings[v] = r
+                mock_l = [{"nome": p, "rating": ratings.get(p, 1000), "goleiro": False} for p in presentes if p not in goleiros_sel]
+                mock_g = [{"nome": g, "rating": ratings.get(g, 1000), "goleiro": True} for g in goleiros_sel]
+                ta, tb, gap = MatchEngine.balance_teams(mock_l, mock_g)
+                # CHAMA AUDITORIA GLOBAL NA NUVEM
+                num_global = registrar_auditoria_cloud(gap, ta, tb)
+                st.session_state.res_time_a, st.session_state.res_time_b, st.session_state.res_gap = ta, tb, gap
+                st.session_state.num_sorteio_atual = num_global
+                st.rerun()
 
     if "res_time_a" in st.session_state:
         st.success("Times Equilibrados! 🎯")
