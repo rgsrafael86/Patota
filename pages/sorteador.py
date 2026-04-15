@@ -255,7 +255,7 @@ with tab_principal:
     col_v1, col_v2, col_v3, col_v4 = st.columns([4, 2, 2, 3])
     with col_v1: nome_vis = st.text_input("Visitante", key="temp_v_nome", placeholder="Ex: Jonas", label_visibility="collapsed")
     with col_v2: nivel_vis = st.selectbox("Nível", [1, 2, 3, 4, 5], index=2, key="temp_v_nivel", label_visibility="collapsed")
-    with col_v3: is_gol = st.checkbox("🧤?", key="temp_v_gol")
+    with col_v3: is_gol = st.checkbox("🧤Goleiro?", key="temp_v_gol")
     with col_v4:
         if st.button("➕", use_container_width=True):
             if nome_vis and nome_vis not in st.session_state.visitantes_list:
