@@ -185,7 +185,6 @@ st.markdown("""
     div[data-baseweb="input"] { background-color: #ffffff !important; border: 1px solid #cccccc !important; border-radius: 4px !important; }
     div[data-baseweb="input"] input { color: #000000 !important; caret-color: #000000 !important; -webkit-text-fill-color: #000000 !important; }
     div[data-baseweb="input"] input::placeholder { color: #7f8c8d !important; -webkit-text-fill-color: #7f8c8d !important; }
-    /* Proteção extra para o Number Input */
     div[data-testid="stNumberInput"] input { color: #000000 !important; -webkit-text-fill-color: #000000 !important; }
     </style>
 """, unsafe_allow_html=True)
@@ -220,8 +219,13 @@ with tab_principal:
         st.stop()
 
     jogadores_base, goleiros_base = obter_base_de_jogadores()
-    for key in ['visitantes_list', 'visitantes_ratings', 'visitantes_goleiros', 'keys_presentes', 'sorteio_count']:
-        if key not in st.session_state: st.session_state[key] = [] if 'list' in key or 'keys' in key else ({} if 'ratings' in key else 0)
+    
+    # TIPAGEM SEGURA DO ESTADO DA SESSÃO (Evita TypeError)
+    if 'visitantes_list' not in st.session_state: st.session_state.visitantes_list = []
+    if 'visitantes_goleiros' not in st.session_state: st.session_state.visitantes_goleiros = []
+    if 'keys_presentes' not in st.session_state: st.session_state.keys_presentes = []
+    if 'visitantes_ratings' not in st.session_state: st.session_state.visitantes_ratings = {}
+    if 'sorteio_count' not in st.session_state: st.session_state.sorteio_count = 0
 
     st.markdown("### 1️⃣ Presença")
     col_v1, col_v2, col_v3, col_v4 = st.columns([4, 2, 2, 3])
@@ -247,7 +251,6 @@ with tab_principal:
     st.markdown("### 2️⃣ Goleiros")
     # Filtro automático dos goleiros cadastrados ou visitantes que estão presentes
     goleiros_default = [p for p in presentes if p in goleiros_base or p in st.session_state.visitantes_goleiros]
-    # Retirada a 'key' para evitar conflito de estado de sessão e garantir o funcionamento do 'default'
     goleiros_sel = st.multiselect("Selecione os Goleiros:", presentes, default=goleiros_default)
 
     if st.button("⚖️ GERAR TIMES", use_container_width=True):
@@ -285,7 +288,7 @@ with tab_principal:
         msg_safe = msg.replace('`', "'").replace('\n', '\\n')
         components.html(f"""
             <button onclick="navigator.clipboard.writeText(`{msg_safe}`).then(() => {{ this.innerText = '✅ Copiado com Sucesso!'; this.style.backgroundColor = '#128C7E'; }})" 
-            style="width: 100%; padding: 15px; background-color: #25D366; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer;">
+            style="width: 100%; padding: 15px; background-color: #25D366; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; box-shadow: 0px 4px 6px rgba(0,0,0,0.2);">
                 📋 COPIAR RESUMO PARA WHATSAPP
             </button>
         """, height=65)
