@@ -179,18 +179,25 @@ class MatchEngine:
 # --- INTERFACE ---
 st.title("🧠 Sorteador Ajax")
 
-# CSS: Utiliza variáveis nativas do Streamlit para respeitar o Dark/Light Mode automaticamente
+# CSS: Escopo restrito a Inputs de Texto e Números para evitar artefatos em Listas Suspensas
 st.markdown("""
     <style>
-    div[data-baseweb="input"] input { 
-        -webkit-text-fill-color: var(--text-color) !important; 
-        caret-color: var(--text-color) !important; 
-        color: var(--text-color) !important;
+    /* Força fundo claro e texto escuro exclusivamente em campos de digitação */
+    div[data-testid="stTextInput"] div[data-baseweb="input"],
+    div[data-testid="stNumberInput"] div[data-baseweb="input"] {
+        background-color: #ffffff !important;
+        border: 1px solid #cccccc !important;
+        border-radius: 4px !important;
     }
-    div[data-testid="stNumberInput"] input { 
-        -webkit-text-fill-color: var(--text-color) !important; 
-        caret-color: var(--text-color) !important; 
-        color: var(--text-color) !important;
+    div[data-testid="stTextInput"] input,
+    div[data-testid="stNumberInput"] input {
+        color: #000000 !important;
+        -webkit-text-fill-color: #000000 !important;
+        caret-color: #000000 !important;
+    }
+    div[data-testid="stTextInput"] input::placeholder {
+        color: #7f8c8d !important;
+        -webkit-text-fill-color: #7f8c8d !important;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -244,6 +251,8 @@ with tab_principal:
     if 'sorteio_count' not in st.session_state: st.session_state.sorteio_count = 0
 
     st.markdown("### 1️⃣ Presença")
+    st.caption("Adicione o Visitante e defina o Nível Técnico (1=Básico, 3=Médio, 5=Craque):")
+    
     col_v1, col_v2, col_v3, col_v4 = st.columns([4, 2, 2, 3])
     with col_v1: nome_vis = st.text_input("Visitante", key="temp_v_nome", placeholder="Ex: Jonas", label_visibility="collapsed")
     with col_v2: nivel_vis = st.selectbox("Nível", [1, 2, 3, 4, 5], index=2, key="temp_v_nivel", label_visibility="collapsed")
