@@ -179,22 +179,25 @@ class MatchEngine:
 # --- INTERFACE ---
 st.title("🧠 Sorteador Ajax")
 
-# CSS: Escopo restrito a Inputs de Texto e Números para evitar artefatos em Listas Suspensas
+# --- ISOLAMENTO CSS ESTRITO ---
+# Aplica cor branca com texto preto APENAS nos inputs textuais (Visitante) e numéricos (Placar).
+# O uso de stMultiSelect e stSelectbox permanece intocado pelo motor nativo do Streamlit.
 st.markdown("""
     <style>
-    /* Força fundo claro e texto escuro exclusivamente em campos de digitação */
     div[data-testid="stTextInput"] div[data-baseweb="input"],
     div[data-testid="stNumberInput"] div[data-baseweb="input"] {
         background-color: #ffffff !important;
+        border-radius: 6px !important;
         border: 1px solid #cccccc !important;
-        border-radius: 4px !important;
     }
+    
     div[data-testid="stTextInput"] input,
     div[data-testid="stNumberInput"] input {
         color: #000000 !important;
         -webkit-text-fill-color: #000000 !important;
         caret-color: #000000 !important;
     }
+    
     div[data-testid="stTextInput"] input::placeholder {
         color: #7f8c8d !important;
         -webkit-text-fill-color: #7f8c8d !important;
@@ -233,9 +236,7 @@ with tab_principal:
 
     jogadores_base, goleiros_base = obter_base_de_jogadores()
     
-    # -------------------------------------------------------------
     # POKA-YOKE: LIMPEZA DE CACHE "SUJO" DA SESSÃO ANTERIOR
-    # -------------------------------------------------------------
     if 'visitantes_goleiros' in st.session_state and not isinstance(st.session_state.visitantes_goleiros, list):
         st.session_state.visitantes_goleiros = []
     if 'visitantes_list' in st.session_state and not isinstance(st.session_state.visitantes_list, list):
