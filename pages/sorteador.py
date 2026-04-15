@@ -302,25 +302,32 @@ with tab_principal:
     if 'visitantes_ratings' not in st.session_state: st.session_state.visitantes_ratings = {}
     if 'sorteio_count' not in st.session_state: st.session_state.sorteio_count = 0
 
+    def inserir_visitante_callback():
+        nome = st.session_state.get('temp_v_nome', '').strip()
+        nivel = st.session_state.get('temp_v_nivel', 3)
+        goleiro = st.session_state.get('temp_v_gol', False)
+        
+        if nome and nome not in st.session_state.visitantes_list:
+            st.session_state.visitantes_list.append(nome)
+            st.session_state.visitantes_ratings[nome] = {1:850, 2:925, 3:1000, 4:1075, 5:1150}[nivel]
+            if nome not in st.session_state.keys_presentes: 
+                st.session_state.keys_presentes.append(nome)
+            if goleiro: 
+                st.session_state.visitantes_goleiros.append(nome)
+            
+            # LIMPEZA SEGURA NO CALLBACK
+            st.session_state.temp_v_nome = ""
+            st.session_state.temp_v_gol = False
+
     st.markdown("### 1️⃣ Presença")
     st.caption("Adicione o Visitante e defina o Nível Técnico (1=Básico, 3=Médio, 5=Craque):")
     
     col_v1, col_v2, col_v3, col_v4 = st.columns([4, 2, 2, 3])
-    with col_v1: nome_vis = st.text_input("Visitante", key="temp_v_nome", placeholder="Ex: Jonas", label_visibility="collapsed")
-    with col_v2: nivel_vis = st.selectbox("Nível", [1, 2, 3, 4, 5], index=2, key="temp_v_nivel", label_visibility="collapsed")
-    with col_v3: is_gol = st.checkbox("🧤Goleiro?", key="temp_v_gol")
+    with col_v1: st.text_input("Visitante", key="temp_v_nome", placeholder="Ex: Jonas", label_visibility="collapsed")
+    with col_v2: st.selectbox("Nível", [1, 2, 3, 4, 5], index=2, key="temp_v_nivel", label_visibility="collapsed")
+    with col_v3: st.checkbox("🧤Goleiro?", key="temp_v_gol")
     with col_v4:
-        if st.button("➕Inserir", use_container_width=True):
-            if nome_vis and nome_vis not in st.session_state.visitantes_list:
-                st.session_state.visitantes_list.append(nome_vis)
-                st.session_state.visitantes_ratings[nome_vis] = {1:850, 2:925, 3:1000, 4:1075, 5:1150}[nivel_vis]
-                if nome_vis not in st.session_state.keys_presentes: st.session_state.keys_presentes.append(nome_vis)
-                if is_gol: st.session_state.visitantes_goleiros.append(nome_vis)
-                
-                # LIMPEZA DOS CAMPOS APÓS INSERIR
-                st.session_state.temp_v_nome = ""
-                st.session_state.temp_v_gol = False
-                st.rerun()
+        st.button("➕Inserir", use_container_width=True, on_click=inserir_visitante_callback)
 
     opcoes_totais = list(dict.fromkeys(jogadores_base + goleiros_base + st.session_state.visitantes_list))
     
