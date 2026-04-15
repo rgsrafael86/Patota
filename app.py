@@ -26,14 +26,23 @@ st.markdown(
     }
     
     /* Correção para Inputs, Selects e Multiselect (BaseWeb) */
-    div[data-baseweb="select"], div[data-baseweb="input"], div[data-baseweb="tag"] {
+    div[data-baseweb="select"], div[data-baseweb="input"], div[data-baseweb="tag"], .stTextInput>div>div>input {
         background-color: #1e1e1e !important;
+        border: 1px solid #333333 !important;
         border-radius: 8px !important;
+        color: white !important;
     }
     div[data-baseweb="popover"] {
         background-color: #1e1e1e !important;
         color: white !important;
     }
+    
+    /* Estilo do Placeholder (Texto de sugestão) */
+    ::placeholder {
+        color: #aaaaaa !important;
+        opacity: 1;
+    }
+    
     span[data-baseweb="tag"] {
         background-color: #8a2be2 !important;
         color: white !important;

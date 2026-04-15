@@ -407,8 +407,8 @@ with tab_principal:
             
         msg_wpp += f"\n⚖️ *Equilíbrio:* {st.session_state.res_gap} pts"
         
-        with st.expander("📲 CLIQUE PARA COPIAR PARA WHATSAPP"):
-            st.code(msg_wpp, language="text")
+        st.info("👇 Copie o texto abaixo e cole no WhatsApp:")
+        st.text_area("Texto para WhatsApp", msg_wpp, height=250, label_visibility="collapsed")
         
         # Leitura da Auditoria recente
         registros_var = ler_auditoria_cloud()
