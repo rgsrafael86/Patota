@@ -1,0 +1,23 @@
+# Credenciais e Segredos — NUNCA subir para o GitHub!
+gcp_credenciais.json
+.streamlit/secrets.toml
+
+# Arquivos temporários e de desenvolvimento
+create_audit.py
+test_gcp.py
+fluxo.csv
+fluxo_caixa.csv
+params.csv
+arquivo_morto/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyc
+.env
+.venv
+venv/
+
+# OS
+.DS_Store
+Thumbs.db
