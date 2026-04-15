@@ -53,18 +53,6 @@ def obter_partida_pendente():
     except:
         return None
 
-def registrar_auditoria_cloud(sorteio_num, gap, time_a, time_b):
-    try:
-        sh = get_gspread_client()
-        ws = sh.worksheet("Audit_Sorteios")
-        agora = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=-3))).strftime("%d/%m/%Y %H:%M:%S")
-        az = ", ".join([p["nome"] for p in time_a])
-        rx = ", ".join([p["nome"] for p in time_b])
-        status = "Autêntico" if sorteio_num == 1 else "Suspeito"
-        ws.append_row([agora, sorteio_num, status, gap, az, rx])
-    except:
-        pass
-
 def ler_auditoria_cloud():
     try:
         sh = get_gspread_client()
@@ -72,6 +60,42 @@ def ler_auditoria_cloud():
         return ws.get_all_records()
     except:
         return []
+
+def obter_contagem_audit_hoje():
+    """Consulta a nuvem para saber quantos sorteios reais já foram feitos hoje."""
+    try:
+        registros = ler_auditoria_cloud()
+        if not registros: return 0, None
+        
+        hoje = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=-3))).strftime("%d/%m/%Y")
+        # Filtra registros de hoje
+        regs_hoje = [r for r in registros if str(r.get("Data_Hora", "")).startswith(hoje)]
+        
+        if not regs_hoje: return 0, None
+        
+        # Retorna o total de hoje e o horário do último para o V.A.R.
+        ultimo_horario = regs_hoje[-1].get("Data_Hora", "").split(" ")[1]
+        return len(regs_hoje), ultimo_horario
+    except:
+        return 0, None
+
+def registrar_auditoria_cloud(gap, time_a, time_b):
+    try:
+        sh = get_gspread_client()
+        ws = sh.worksheet("Audit_Sorteios")
+        
+        hoje_count, _ = obter_contagem_audit_hoje()
+        sorteio_num = hoje_count + 1
+        
+        agora = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=-3))).strftime("%d/%m/%Y %H:%M:%S")
+        az = ", ".join([p["nome"] for p in time_a])
+        rx = ", ".join([p["nome"] for p in time_b])
+        status = "Autêntico" if sorteio_num == 1 else "Suspeito"
+        
+        ws.append_row([agora, sorteio_num, status, gap, az, rx])
+        return sorteio_num
+    except:
+        return 1
 
 def finalizar_partida(row_index, gols_a, gols_b, time_a, time_b):
     sh = get_gspread_client()
@@ -301,15 +325,16 @@ with tab_principal:
     if st.button("⚖️ GERAR TIMES", use_container_width=True):
         if len(presentes) < 10: st.error("Mínimo 10 jogadores!")
         else:
-            st.session_state.sorteio_count += 1
             ratings = obter_ratings_atuais()
             for v, r in st.session_state.visitantes_ratings.items():
                 if v not in ratings: ratings[v] = r
             mock_l = [{"nome": p, "rating": ratings.get(p, 1000), "goleiro": False} for p in presentes if p not in goleiros_sel]
             mock_g = [{"nome": g, "rating": ratings.get(g, 1000), "goleiro": True} for g in goleiros_sel]
             ta, tb, gap = MatchEngine.balance_teams(mock_l, mock_g)
-            registrar_auditoria_cloud(st.session_state.sorteio_count, gap, ta, tb)
+            # CHAMA AUDITORIA GLOBAL NA NUVEM
+            num_global = registrar_auditoria_cloud(gap, ta, tb)
             st.session_state.res_time_a, st.session_state.res_time_b, st.session_state.res_gap = ta, tb, gap
+            st.session_state.num_sorteio_atual = num_global
 
     if "res_time_a" in st.session_state:
         st.success("Times Equilibrados! 🎯")
@@ -321,14 +346,26 @@ with tab_principal:
         st.markdown("---")
         st.info(f"⚖️ Diferença Matemática: {st.session_state.res_gap:.1f} pontos.")
         
+        # --- ALERTA VISUAL DE AUDITORIA ---
+        total_hoje, ultimo_hora = obter_contagem_audit_hoje()
+        if total_hoje > 1:
+            st.error(f"🚨 **V.A.R. Cloud Ativado:** Este é o **{total_hoje}º sorteio** registrado hoje.\n\nO sorteio anterior foi realizado às `{ultimo_hora}`.")
+        else:
+            st.success("✅ **Sorteio Oficial:** Este é o 1º sorteio registrado na nuvem hoje.")
+
         msg = f"⚽ *SORTEIO PATOTA AJAX* ⚽\n📅 {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=-3))).strftime('%d/%m/%Y')}\n\n🔵 *TIME AZUL*\n"
         for j in st.session_state.res_time_a: msg += f"{'🧤' if j.get('goleiro') else '🏃'} {j['nome']}\n"
         msg += f"\n🟣 *TIME ROXO*\n"
         for j in st.session_state.res_time_b: msg += f"{'🧤' if j.get('goleiro') else '🏃'} {j['nome']}\n"
         msg += f"\n⚖️ *Desnível entre os times:* Apenas {st.session_state.res_gap:.1f} pontos de diferença na soma geral."
         
-        registros_var = ler_auditoria_cloud()
-        if len(registros_var) >= 2: msg += f"\n\n🚨 *V.A.R.:* Sorteio nº {st.session_state.sorteio_count}.\nÚltimo: {registros_var[-1]['Data_Hora']}"
+        # --- AUDITORIA NO WHATSAPP ---
+        total_hoje, ultimo_hora = obter_contagem_audit_hoje()
+        if total_hoje > 1:
+            msg += f"\n\n🚨 *V.A.R. Cloud:* Sorteio nº {total_hoje} registrado hoje."
+            msg += f"\n⚠️ *ALERTA:* Houve um sorteio anterior às {ultimo_hora}."
+        else:
+            msg += f"\n\n✅ *V.A.R. Cloud:* Sorteio nº 1 (Oficial)"
         
         msg += "\n\n🔗 *Preencher Resultado:* Acesse o atalho Patota Ajax Portal · Streamlit (https://patota.streamlit.app/)"
         
