@@ -301,7 +301,7 @@ with tab_principal:
         for j in st.session_state.res_time_a: msg += f"{'🧤' if j.get('goleiro') else '🏃'} {j['nome']}\n"
         msg += f"\n🟣 *TIME ROXO*\n"
         for j in st.session_state.res_time_b: msg += f"{'🧤' if j.get('goleiro') else '🏃'} {j['nome']}\n"
-        msg += f"\n⚖️ *Equilíbrio:* {st.session_state.res_gap} pts"
+        msg += f"\n⚖️ *Desnível entre os times:* Apenas {st.session_state.res_gap} pontos de diferença na soma geral."
         
         registros_var = ler_auditoria_cloud()
         if len(registros_var) >= 2: msg += f"\n\n🚨 *V.A.R.:* Sorteio nº {st.session_state.sorteio_count}.\nÚltimo: {registros_var[-1]['Data_Hora']}"
