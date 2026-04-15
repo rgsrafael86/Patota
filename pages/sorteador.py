@@ -10,8 +10,23 @@ import datetime
 # --- POKA YOKE: GOOGLE SHEETS CLOUD ---
 @st.cache_resource
 def get_gspread_client():
-    gc = gspread.service_account(filename='gcp_credenciais.json')
-    return gc.open_by_key("1EJ-iSyYVbdafgAWawAQL2Kc-092OVfKtNvqbZg3eWfs")
+    SHEET_ID = "1EJ-iSyYVbdafgAWawAQL2Kc-092OVfKtNvqbZg3eWfs"
+    
+    if "gcp_service_account" in st.secrets:
+        # PRODUÇÃO (Streamlit Cloud) — lê dos Secrets
+        import json
+        from google.oauth2.service_account import Credentials
+        scopes = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+        creds_dict = dict(st.secrets["gcp_service_account"])
+        # Corrige quebras de linha na chave privada
+        creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+        credentials = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+        gc = gspread.authorize(credentials)
+    else:
+        # LOCAL — lê do arquivo JSON
+        gc = gspread.service_account(filename='gcp_credenciais.json')
+    
+    return gc.open_by_key(SHEET_ID)
 
 def salvar_partida_pendente(time_a, time_b):
     sh = get_gspread_client()
