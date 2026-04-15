@@ -318,12 +318,14 @@ with tab_principal:
             with col:
                 st.markdown(f"<h3 style='color: {cor}; text-align: center; border-bottom: 2px solid {cor};'>{label}</h3>", unsafe_allow_html=True)
                 for j in time: st.write(f"**{'🧤' if j.get('goleiro') else '🏃'} {j['nome']}** \n`ELO: {j['rating']}`")
+        st.markdown("---")
+        st.info(f"⚖️ Diferença Matemática: {st.session_state.res_gap:.1f} pontos.")
         
         msg = f"⚽ *SORTEIO PATOTA AJAX* ⚽\n📅 {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=-3))).strftime('%d/%m/%Y')}\n\n🔵 *TIME AZUL*\n"
         for j in st.session_state.res_time_a: msg += f"{'🧤' if j.get('goleiro') else '🏃'} {j['nome']}\n"
         msg += f"\n🟣 *TIME ROXO*\n"
         for j in st.session_state.res_time_b: msg += f"{'🧤' if j.get('goleiro') else '🏃'} {j['nome']}\n"
-        msg += f"\n⚖️ *Desnível entre os times:* Apenas {st.session_state.res_gap} pontos de diferença na soma geral."
+        msg += f"\n⚖️ *Desnível entre os times:* Apenas {st.session_state.res_gap:.1f} pontos de diferença na soma geral."
         
         registros_var = ler_auditoria_cloud()
         if len(registros_var) >= 2: msg += f"\n\n🚨 *V.A.R.:* Sorteio nº {st.session_state.sorteio_count}.\nÚltimo: {registros_var[-1]['Data_Hora']}"
