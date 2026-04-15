@@ -3,7 +3,7 @@ import streamlit as st
 # --- 1. CONFIGURAÇÃO BASE ---
 st.set_page_config(page_title="Patota Ajax Portal", page_icon="⚽", layout="wide", initial_sidebar_state="collapsed")
 
-# CSS Global para a cara de SaaS e Assassino de Sidebar
+# CSS Global para a cara de SaaS, Botões e Assassino de Sidebar
 st.markdown(
     """
     <style>
@@ -12,6 +12,22 @@ st.markdown(
     [data-testid="collapsedControl"] {display: none !important;}
     .stApp { background-color: #000000; }
     h1, h2, h3, h4, h5, p, span, div { font-family: 'Helvetica', sans-serif; color: #ffffff; }
+    
+    /* Configuração Dark Mode Forçado para Botões */
+    .stButton button {
+        background-color: #121212 !important;
+        border: 1px solid #8a2be2 !important;
+        color: #ffffff !important;
+        border-radius: 8px !important;
+    }
+    .stButton button:hover {
+        background-color: #8a2be2 !important;
+        color: #ffffff !important;
+    }
+    .stButton button p {
+        color: #ffffff !important;
+        font-weight: 600 !important;
+    }
     </style>
     """, unsafe_allow_html=True
 )
