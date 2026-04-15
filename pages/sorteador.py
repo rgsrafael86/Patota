@@ -179,13 +179,19 @@ class MatchEngine:
 # --- INTERFACE ---
 st.title("🧠 Sorteador Ajax")
 
-# CSS: Força o contraste dos inputs resolvendo o bug de Webkit (iOS/Dark Mode)
+# CSS: Utiliza variáveis nativas do Streamlit para respeitar o Dark/Light Mode automaticamente
 st.markdown("""
     <style>
-    div[data-baseweb="input"] { background-color: #ffffff !important; border: 1px solid #cccccc !important; border-radius: 4px !important; }
-    div[data-baseweb="input"] input { color: #000000 !important; caret-color: #000000 !important; -webkit-text-fill-color: #000000 !important; }
-    div[data-baseweb="input"] input::placeholder { color: #7f8c8d !important; -webkit-text-fill-color: #7f8c8d !important; }
-    div[data-testid="stNumberInput"] input { color: #000000 !important; -webkit-text-fill-color: #000000 !important; }
+    div[data-baseweb="input"] input { 
+        -webkit-text-fill-color: var(--text-color) !important; 
+        caret-color: var(--text-color) !important; 
+        color: var(--text-color) !important;
+    }
+    div[data-testid="stNumberInput"] input { 
+        -webkit-text-fill-color: var(--text-color) !important; 
+        caret-color: var(--text-color) !important; 
+        color: var(--text-color) !important;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -220,7 +226,17 @@ with tab_principal:
 
     jogadores_base, goleiros_base = obter_base_de_jogadores()
     
-    # TIPAGEM SEGURA DO ESTADO DA SESSÃO (Evita TypeError)
+    # -------------------------------------------------------------
+    # POKA-YOKE: LIMPEZA DE CACHE "SUJO" DA SESSÃO ANTERIOR
+    # -------------------------------------------------------------
+    if 'visitantes_goleiros' in st.session_state and not isinstance(st.session_state.visitantes_goleiros, list):
+        st.session_state.visitantes_goleiros = []
+    if 'visitantes_list' in st.session_state and not isinstance(st.session_state.visitantes_list, list):
+        st.session_state.visitantes_list = []
+    if 'keys_presentes' in st.session_state and not isinstance(st.session_state.keys_presentes, list):
+        st.session_state.keys_presentes = []
+        
+    # INICIALIZAÇÃO SEGURA DO ESTADO DA SESSÃO
     if 'visitantes_list' not in st.session_state: st.session_state.visitantes_list = []
     if 'visitantes_goleiros' not in st.session_state: st.session_state.visitantes_goleiros = []
     if 'keys_presentes' not in st.session_state: st.session_state.keys_presentes = []
@@ -249,7 +265,6 @@ with tab_principal:
     presentes = st.multiselect("Quem vai pro jogo?", opcoes_totais, key="keys_presentes")
     
     st.markdown("### 2️⃣ Goleiros")
-    # Filtro automático dos goleiros cadastrados ou visitantes que estão presentes
     goleiros_default = [p for p in presentes if p in goleiros_base or p in st.session_state.visitantes_goleiros]
     goleiros_sel = st.multiselect("Selecione os Goleiros:", presentes, default=goleiros_default)
 
@@ -296,15 +311,16 @@ with tab_principal:
         if st.button("💾 INICIAR PARTIDA OFICIAL", use_container_width=True):
             salvar_partida_pendente(st.session_state.res_time_a, st.session_state.res_time_b)
             
-            # Limpeza segura do cache de variáveis (Evita o StreamlitAPIException)
-            chaves_para_limpar = ['res_time_a', 'res_time_b', 'res_gap', 'keys_presentes']
+            # Limpeza segura (Evita StreamlitAPIException)
+            chaves_para_limpar = ['res_time_a', 'res_time_b', 'res_gap', 'keys_presentes', 'keys_goleiros']
             for chave in chaves_para_limpar:
                 if chave in st.session_state:
-                    del st.session_state[chave]
+                    try: del st.session_state[chave]
+                    except: pass
             
             st.session_state.sorteio_count = 0
             st.rerun()
 
 # --- RODAPÉ DISCRETO ---
 st.markdown("---")
-st.caption("Layout otimizado para celular | Suporte: Rafael Guimarães")
+st.caption("Suporte: Rafael Guimarães")
