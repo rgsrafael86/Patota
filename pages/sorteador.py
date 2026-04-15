@@ -391,6 +391,25 @@ with tab_principal:
         st.markdown("---")
         st.info(f"⚖️ Diferença Matemática: {st.session_state.res_gap} pontos.")
         
+        # --- FUNÇÃO COPIAR WHATSAPP ---
+        msg_wpp = f"⚽ *SORTEIO PATOTA AJAX* ⚽\n"
+        msg_wpp += f"📅 {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=-3))).strftime('%d/%m/%Y')}\n\n"
+        
+        msg_wpp += "🔵 *TIME AZUL*\n"
+        for j in st.session_state.res_time_a:
+            icon = "🧤" if j.get("goleiro") else "🏃"
+            msg_wpp += f"{icon} {j['nome']}\n"
+        
+        msg_wpp += "\n🟣 *TIME ROXO*\n"
+        for j in st.session_state.res_time_b:
+            icon = "🧤" if j.get("goleiro") else "🏃"
+            msg_wpp += f"{icon} {j['nome']}\n"
+            
+        msg_wpp += f"\n⚖️ *Equilíbrio:* {st.session_state.res_gap} pts"
+        
+        with st.expander("📲 CLIQUE PARA COPIAR PARA WHATSAPP"):
+            st.code(msg_wpp, language="text")
+        
         # Leitura da Auditoria recente
         registros_var = ler_auditoria_cloud()
         if len(registros_var) >= 2:

@@ -50,7 +50,7 @@ st.markdown(
     }
     input {
         color: white !important;
-        background-color: transparent !important;
+        background-color: #1e1e1e !important;
     }
     </style>
     """, unsafe_allow_html=True
