@@ -257,7 +257,7 @@ with tab_principal:
     with col_v2: nivel_vis = st.selectbox("Nível", [1, 2, 3, 4, 5], index=2, key="temp_v_nivel", label_visibility="collapsed")
     with col_v3: is_gol = st.checkbox("🧤Goleiro?", key="temp_v_gol")
     with col_v4:
-        if st.button("➕", use_container_width=True):
+        if st.button("➕Inserir", use_container_width=True):
             if nome_vis and nome_vis not in st.session_state.visitantes_list:
                 st.session_state.visitantes_list.append(nome_vis)
                 st.session_state.visitantes_ratings[nome_vis] = {1:850, 2:925, 3:1000, 4:1075, 5:1150}[nivel_vis]
