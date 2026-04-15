@@ -179,12 +179,14 @@ class MatchEngine:
 # --- INTERFACE ---
 st.title("🧠 Sorteador Ajax")
 
-# CSS: Correção de contraste e visibilidade do cursor
+# CSS: Força o contraste dos inputs resolvendo o bug de Webkit (iOS/Dark Mode)
 st.markdown("""
     <style>
-    div[data-baseweb="input"] { background-color: #ffffff !important; border: 1px solid #cccccc !important; }
-    div[data-baseweb="input"] input { color: #000000 !important; caret-color: #000000 !important; }
-    div[data-baseweb="input"] input::placeholder { color: #7f8c8d !important; }
+    div[data-baseweb="input"] { background-color: #ffffff !important; border: 1px solid #cccccc !important; border-radius: 4px !important; }
+    div[data-baseweb="input"] input { color: #000000 !important; caret-color: #000000 !important; -webkit-text-fill-color: #000000 !important; }
+    div[data-baseweb="input"] input::placeholder { color: #7f8c8d !important; -webkit-text-fill-color: #7f8c8d !important; }
+    /* Proteção extra para o Number Input */
+    div[data-testid="stNumberInput"] input { color: #000000 !important; -webkit-text-fill-color: #000000 !important; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -218,8 +220,8 @@ with tab_principal:
         st.stop()
 
     jogadores_base, goleiros_base = obter_base_de_jogadores()
-    for key in ['visitantes_list', 'visitantes_ratings', 'visitantes_goleiros', 'keys_presentes', 'keys_goleiros', 'sorteio_count']:
-        if key not in st.session_state: st.session_state[key] = [] if 'list' in key or 'keys' in key or 'goleiros' in key else ({} if 'ratings' in key else 0)
+    for key in ['visitantes_list', 'visitantes_ratings', 'visitantes_goleiros', 'keys_presentes', 'sorteio_count']:
+        if key not in st.session_state: st.session_state[key] = [] if 'list' in key or 'keys' in key else ({} if 'ratings' in key else 0)
 
     st.markdown("### 1️⃣ Presença")
     col_v1, col_v2, col_v3, col_v4 = st.columns([4, 2, 2, 3])
@@ -237,14 +239,16 @@ with tab_principal:
 
     opcoes_totais = list(dict.fromkeys(jogadores_base + goleiros_base + st.session_state.visitantes_list))
     
-    # HOTFIX: Botão de Pulso para Selecionar Todos
     if st.button("☑️ Selecionar Todos os Jogadores", use_container_width=True):
         st.session_state.keys_presentes = opcoes_totais
 
     presentes = st.multiselect("Quem vai pro jogo?", opcoes_totais, key="keys_presentes")
     
     st.markdown("### 2️⃣ Goleiros")
-    goleiros_sel = st.multiselect("Selecione os Goleiros:", st.session_state.keys_presentes, key="keys_goleiros")
+    # Filtro automático dos goleiros cadastrados ou visitantes que estão presentes
+    goleiros_default = [p for p in presentes if p in goleiros_base or p in st.session_state.visitantes_goleiros]
+    # Retirada a 'key' para evitar conflito de estado de sessão e garantir o funcionamento do 'default'
+    goleiros_sel = st.multiselect("Selecione os Goleiros:", presentes, default=goleiros_default)
 
     if st.button("⚖️ GERAR TIMES", use_container_width=True):
         if len(presentes) < 10: st.error("Mínimo 10 jogadores!")
@@ -267,8 +271,7 @@ with tab_principal:
                 st.markdown(f"<h3 style='color: {cor}; text-align: center; border-bottom: 2px solid {cor};'>{label}</h3>", unsafe_allow_html=True)
                 for j in time: st.write(f"**{'🧤' if j.get('goleiro') else '🏃'} {j['nome']}** \n`ELO: {j['rating']}`")
         
-        # Montagem da mensagem WhatsApp
-        msg = f"⚽ *SORTEIO PATOTA AJAX* ⚽\n📅 {datetime.datetime.now().strftime('%d/%m/%Y')}\n\n🔵 *TIME AZUL*\n"
+        msg = f"⚽ *SORTEIO PATOTA AJAX* ⚽\n📅 {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=-3))).strftime('%d/%m/%Y')}\n\n🔵 *TIME AZUL*\n"
         for j in st.session_state.res_time_a: msg += f"{'🧤' if j.get('goleiro') else '🏃'} {j['nome']}\n"
         msg += f"\n🟣 *TIME ROXO*\n"
         for j in st.session_state.res_time_b: msg += f"{'🧤' if j.get('goleiro') else '🏃'} {j['nome']}\n"
@@ -279,7 +282,6 @@ with tab_principal:
         
         msg += "\n\n🔗 *Preencher Resultado:* Acesse o atalho Patota Ajax Portal · Streamlit (https://patota.streamlit.app/)"
         
-        # Botão HTML Customizado para Cópia
         msg_safe = msg.replace('`', "'").replace('\n', '\\n')
         components.html(f"""
             <button onclick="navigator.clipboard.writeText(`{msg_safe}`).then(() => {{ this.innerText = '✅ Copiado com Sucesso!'; this.style.backgroundColor = '#128C7E'; }})" 
@@ -290,7 +292,14 @@ with tab_principal:
 
         if st.button("💾 INICIAR PARTIDA OFICIAL", use_container_width=True):
             salvar_partida_pendente(st.session_state.res_time_a, st.session_state.res_time_b)
-            st.session_state.keys_presentes, st.session_state.keys_goleiros, st.session_state.sorteio_count = [], [], 0
+            
+            # Limpeza segura do cache de variáveis (Evita o StreamlitAPIException)
+            chaves_para_limpar = ['res_time_a', 'res_time_b', 'res_gap', 'keys_presentes']
+            for chave in chaves_para_limpar:
+                if chave in st.session_state:
+                    del st.session_state[chave]
+            
+            st.session_state.sorteio_count = 0
             st.rerun()
 
 # --- RODAPÉ DISCRETO ---
