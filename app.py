@@ -13,7 +13,7 @@ st.markdown(
     .stApp { background-color: #000000; }
     h1, h2, h3, h4, h5, p, span, div { font-family: 'Helvetica', sans-serif; color: #ffffff; }
     
-    /* Configuração Dark Mode Forçado para Botões */
+    /* Configuração Dark Mode Forçado para Botões e Inputs */
     .stButton button {
         background-color: #121212 !important;
         border: 1px solid #8a2be2 !important;
@@ -24,9 +24,33 @@ st.markdown(
         background-color: #8a2be2 !important;
         color: #ffffff !important;
     }
-    .stButton button p {
-        color: #ffffff !important;
-        font-weight: 600 !important;
+    
+    /* Correção para Inputs, Selects e Multiselect (BaseWeb) */
+    div[data-baseweb="select"], div[data-baseweb="input"], div[data-baseweb="tag"] {
+        background-color: #1e1e1e !important;
+        border-radius: 8px !important;
+    }
+    div[data-baseweb="popover"] {
+        background-color: #1e1e1e !important;
+        color: white !important;
+    }
+    span[data-baseweb="tag"] {
+        background-color: #8a2be2 !important;
+        color: white !important;
+    }
+    div[role="listbox"] {
+        background-color: #1e1e1e !important;
+    }
+    div[role="option"] {
+        color: white !important;
+        background-color: transparent !important;
+    }
+    div[role="option"]:hover {
+        background-color: #8a2be2 !important;
+    }
+    input {
+        color: white !important;
+        background-color: transparent !important;
     }
     </style>
     """, unsafe_allow_html=True
