@@ -6,24 +6,21 @@ import json
 import gspread
 import uuid
 import datetime
+import streamlit.components.v1 as components
 
-# --- POKA YOKE: GOOGLE SHEETS CLOUD ---
+# --- CONFIGURAÇÃO E POKA YOKE: GOOGLE SHEETS CLOUD ---
 @st.cache_resource
 def get_gspread_client():
     SHEET_ID = "1EJ-iSyYVbdafgAWawAQL2Kc-092OVfKtNvqbZg3eWfs"
     
     if "gcp_service_account" in st.secrets:
-        # PRODUÇÃO (Streamlit Cloud) — lê dos Secrets
-        import json
         from google.oauth2.service_account import Credentials
         scopes = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
         creds_dict = dict(st.secrets["gcp_service_account"])
-        # Corrige quebras de linha na chave privada
         creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
         credentials = Credentials.from_service_account_info(creds_dict, scopes=scopes)
         gc = gspread.authorize(credentials)
     else:
-        # LOCAL — lê do arquivo JSON
         gc = gspread.service_account(filename='gcp_credenciais.json')
     
     return gc.open_by_key(SHEET_ID)
@@ -53,7 +50,7 @@ def obter_partida_pendente():
                 "row_index": len(records) + 1 
             }
         return None
-    except Exception as e:
+    except:
         return None
 
 def registrar_auditoria_cloud(sorteio_num, gap, time_a, time_b):
@@ -88,10 +85,7 @@ def finalizar_partida(row_index, gols_a, gols_b, time_a, time_b):
     ranking_db = {str(r['Nome']): r for r in records}
     
     diff = abs(gols_a - gols_b)
-    k_factor = 32
-    if diff >= 5: k_factor = 64
-    elif diff >= 3: k_factor = 48
-    
+    k_factor = 32 if diff < 3 else (48 if diff < 5 else 64)
     res_a = 1 if gols_a > gols_b else (0.5 if gols_a == gols_b else 0)
     res_b = 1 - res_a
     
@@ -131,31 +125,18 @@ def obter_ratings_atuais():
 
 @st.cache_data(ttl=60)
 def obter_base_de_jogadores():
-    jog_linha = []
-    gols = []
+    jog_linha, gols = [], []
     try:
         sh = get_gspread_client()
         ws_base = sh.worksheet("Base_Jogadores")
         records = ws_base.get_all_records()
-        
         for r in records:
-            nome = str(r.get("Nome", "")).strip()
-            cat = str(r.get("Categoria", "")).strip()
-            status = str(r.get("Status", "")).strip()
-            
-            if not nome or cat.lower() == "fornecedor" or status.lower() == "inativo":
-                continue
-                
-            nome_display = nome
-            if status.lower() == "dm":
-                nome_display += " (DM)"
-                
-            if cat.lower() == "goleiro":
-                gols.append(nome_display)
-            else:
-                jog_linha.append(nome_display)
-                
-    except Exception as e:
+            nome, cat, status = str(r.get("Nome", "")).strip(), str(r.get("Categoria", "")).strip(), str(r.get("Status", "")).strip()
+            if not nome or cat.lower() == "fornecedor" or status.lower() == "inativo": continue
+            nome_display = nome + " (DM)" if status.lower() == "dm" else nome
+            if cat.lower() == "goleiro": gols.append(nome_display)
+            else: jog_linha.append(nome_display)
+    except:
         pass
     return jog_linha, gols
 
@@ -176,10 +157,7 @@ class MatchEngine:
         total_players = len(players_list) + len(goalkeepers_list)
         target_size_a = total_players // 2
         needed_a = target_size_a - len(gk_a)
-        
-        best_diff = float('inf')
-        best_combination = None
-        
+        best_diff, best_combination = float('inf'), None
         all_combinations = list(combinations(range(len(players_list)), max(0, needed_a)))
         if len(all_combinations) > 500:
             all_combinations = random.sample(all_combinations, 500)
@@ -187,278 +165,134 @@ class MatchEngine:
         for combo in all_combinations:
             team_a_indices = set(combo)
             team_b_indices = set(range(len(players_list))) - team_a_indices
-            
             sum_a = sum(float(players_list[i].get('rating', 1000)) for i in team_a_indices) + sum(float(g.get('rating', 1000)) for g in gk_a)
             sum_b = sum(float(players_list[i].get('rating', 1000)) for i in team_b_indices) + sum(float(g.get('rating', 1000)) for g in gk_b)
-            
             diff = abs(sum_a - sum_b)
             if diff < best_diff:
                 best_diff = diff
                 best_combination = (team_a_indices, team_b_indices)
-                
+        
         team_a = gk_a + [players_list[i] for i in best_combination[0]]
         team_b = gk_b + [players_list[i] for i in best_combination[1]]
-        
         return team_a, team_b, best_diff
 
-# --- INTERFACE MOBILE FIRST ---
+# --- INTERFACE ---
 st.title("🧠 Sorteador Ajax")
-st.write("Layout otimizado para o seu celular 📱")
 
-# HOTFIX 1: Força contraste e visibilidade no campo de input
+# CSS: Correção de contraste e visibilidade do cursor
 st.markdown("""
     <style>
-    div[data-baseweb="input"] {
-        background-color: #ffffff !important;
-        border: 1px solid #cccccc !important;
-    }
-    div[data-baseweb="input"] input {
-        color: #000000 !important;
-        caret-color: #000000 !important;
-    }
-    div[data-baseweb="input"] input::placeholder {
-        color: #7f8c8d !important;
-    }
+    div[data-baseweb="input"] { background-color: #ffffff !important; border: 1px solid #cccccc !important; }
+    div[data-baseweb="input"] input { color: #000000 !important; caret-color: #000000 !important; }
+    div[data-baseweb="input"] input::placeholder { color: #7f8c8d !important; }
     </style>
 """, unsafe_allow_html=True)
 
-# ABAS NATIVAS STREAMLIT
 tab_principal, tab_audit = st.tabs(["⚙️ Sorteador Oficial", "🕵️‍♂️ V.A.R. Administrativo"])
 
 with tab_audit:
-    st.markdown("### 📋 Caixa Preta do Sorteador")
-    st.write("Aqui residem todas as tentativas de gerar times (impedindo que o organizador tente sortear várias vezes até cair no seu time favorito).")
-    
-    if st.button("🔄 Atualizar Log da Nuvem"):
-        st.rerun()
-        
+    st.markdown("### 📋 Auditoria de Sorteios")
+    if st.button("🔄 Atualizar Log"): st.rerun()
     records_audit = ler_auditoria_cloud()
     if records_audit:
-        df_audit = pd.DataFrame(records_audit).tail(30) # Puxa ultimos 30
-        
-        # Colorir Status
-        def color_status(val):
-            if val == 'Suspeito':
-                return 'color: #ff4444; font-weight: bold'
-            return 'color: #00ff00;'
-            
-        st.dataframe(df_audit.style.map(color_status, subset=['Status']), use_container_width=True)
-    else:
-        st.info("Nenhuma fraude ou sorteio registrado no sistema ainda.")
+        df_audit = pd.DataFrame(records_audit).tail(30)
+        st.dataframe(df_audit.style.map(lambda v: 'color: #ff4444; font-weight: bold' if v == 'Suspeito' else 'color: #00ff00;', subset=['Status']), use_container_width=True)
 
 with tab_principal:
-    # --- BLOQUEIO POKA-YOKE: PARTIDA PENDENTE ---
     pendente = obter_partida_pendente()
     if pendente:
         st.error("🚨 Existe uma partida aguardando o Placar Oficial!")
-        st.markdown(f"**Sorteio Realizado em:** {pendente['data']}")
-        
         colA, colB = st.columns(2)
         with colA:
             st.markdown("<h3 style='color: #00d4ff;'>🔵 T. AZUL</h3>", unsafe_allow_html=True)
-            for j in pendente['time_a']:
-                icon = "🧤" if j.get("goleiro") else "🏃"
-                st.markdown(f"<span style='color:#ccc; font-size:14px;'>{icon} {j['nome']}</span>", unsafe_allow_html=True)
-            st.write("") 
-            gols_a = st.number_input("Gols do Azul", min_value=0, max_value=50, value=0, key="gols_a")
-            
+            for j in pendente['time_a']: st.markdown(f"<span style='color:#ccc; font-size:14px;'>{'🧤' if j.get('goleiro') else '🏃'} {j['nome']}</span>", unsafe_allow_html=True)
+            gols_a = st.number_input("Gols Azul", min_value=0, max_value=50, value=0, key="gols_a")
         with colB:
             st.markdown("<h3 style='color: #8a2be2;'>🟣 T. ROXO</h3>", unsafe_allow_html=True)
-            for j in pendente['time_b']:
-                icon = "🧤" if j.get("goleiro") else "🏃"
-                st.markdown(f"<span style='color:#ccc; font-size:14px;'>{icon} {j['nome']}</span>", unsafe_allow_html=True)
-            st.write("") 
-            gols_b = st.number_input("Gols do Roxo", min_value=0, max_value=50, value=0, key="gols_b")
-            
-        st.markdown("---")
-        if st.button("🏆 Finalizar Partida e Atualizar Patota", use_container_width=True):
-            with st.spinner("Atualizando ranking mundial da Patota na Nuvem..."):
-                finalizar_partida(pendente["row_index"], gols_a, gols_b, pendente["time_a"], pendente["time_b"])
-                st.success("Tudo salvo! O ELO foi recalculado na Planilha do Google.")
-                import time
-                time.sleep(2)
-                st.rerun()
-                
-        st.stop() # PARA A EXECUÇÃO AQUI
+            for j in pendente['time_b']: st.markdown(f"<span style='color:#ccc; font-size:14px;'>{'🧤' if j.get('goleiro') else '🏃'} {j['nome']}</span>", unsafe_allow_html=True)
+            gols_b = st.number_input("Gols Roxo", min_value=0, max_value=50, value=0, key="gols_b")
+        if st.button("🏆 Finalizar Partida", use_container_width=True):
+            finalizar_partida(pendente["row_index"], gols_a, gols_b, pendente["time_a"], pendente["time_b"])
+            st.success("ELO Recalculado!")
+            st.rerun()
+        st.stop()
 
-    # --- INICIALIZAÇÃO DINÂMICA DA BASE DE ATLETAS DA PLANILHA ---
     jogadores_base, goleiros_base = obter_base_de_jogadores()
+    for key in ['visitantes_list', 'visitantes_ratings', 'visitantes_goleiros', 'keys_presentes', 'keys_goleiros', 'sorteio_count']:
+        if key not in st.session_state: st.session_state[key] = [] if 'list' in key or 'keys' in key or 'goleiros' in key else ({} if 'ratings' in key else 0)
 
-    # Sessão de Persistência (Nativa)
-    if 'visitantes_list' not in st.session_state:
-        st.session_state.visitantes_list = []
-    if 'visitantes_ratings' not in st.session_state:
-        st.session_state.visitantes_ratings = {}
-    if 'visitantes_goleiros' not in st.session_state:
-        st.session_state.visitantes_goleiros = []
-    if 'keys_presentes' not in st.session_state:
-        st.session_state.keys_presentes = []
-    if 'keys_goleiros' not in st.session_state:
-        st.session_state.keys_goleiros = []
-    if 'sorteio_count' not in st.session_state:
-        st.session_state.sorteio_count = 0
-    if 'temp_visitante' not in st.session_state:
-        st.session_state.temp_visitante = ""
-    if 'temp_is_gol' not in st.session_state:
-        st.session_state.temp_is_gol = False
-    if 'temp_nivel' not in st.session_state:
-        st.session_state.temp_nivel = 3
-
-    st.markdown("### 1️⃣ Lista de Presença")
-    st.info("Insira o visitante primeiro, se houver.")
-
-    def add_visitor_callback():
-        novo = st.session_state.temp_visitante.strip()
-        mapa_forca = {1: 850, 2: 925, 3: 1000, 4: 1075, 5: 1150}
-        forca_calculada = mapa_forca.get(st.session_state.temp_nivel, 1000)
-        
-        if novo and novo not in st.session_state.visitantes_list:
-            st.session_state.visitantes_list.append(novo)
-            st.session_state.visitantes_ratings[novo] = forca_calculada
-            
-            if novo not in st.session_state.keys_presentes:
-                st.session_state.keys_presentes.append(novo)
-            if st.session_state.temp_is_gol:
-                st.session_state.visitantes_goleiros.append(novo)
-                if novo not in st.session_state.keys_goleiros:
-                    st.session_state.keys_goleiros.append(novo)
-        
-        st.session_state.temp_visitante = ""
-        st.session_state.temp_is_gol = False
-        st.session_state.temp_nivel = 3
-
-    st.write("Adicione o Visitante e sua Força (1=Básico, 3=Médio, 5=Craque):")
+    st.markdown("### 1️⃣ Presença")
     col_v1, col_v2, col_v3, col_v4 = st.columns([4, 2, 2, 3])
-    with col_v1:
-        st.text_input("Nome do Visitante", key="temp_visitante", placeholder="Ex: Jonas", label_visibility="collapsed")
-    with col_v2:
-        st.selectbox("Nível", [1, 2, 3, 4, 5], key="temp_nivel", label_visibility="collapsed")
-    with col_v3:
-        st.checkbox("🧤 Goleiro?", key="temp_is_gol")
+    with col_v1: nome_vis = st.text_input("Visitante", key="temp_v_nome", placeholder="Ex: Jonas", label_visibility="collapsed")
+    with col_v2: nivel_vis = st.selectbox("Nível", [1, 2, 3, 4, 5], index=2, key="temp_v_nivel", label_visibility="collapsed")
+    with col_v3: is_gol = st.checkbox("🧤?", key="temp_v_gol")
     with col_v4:
-        st.button("➕ Inserir", use_container_width=True, on_click=add_visitor_callback)
+        if st.button("➕", use_container_width=True):
+            if nome_vis and nome_vis not in st.session_state.visitantes_list:
+                st.session_state.visitantes_list.append(nome_vis)
+                st.session_state.visitantes_ratings[nome_vis] = {1:850, 2:925, 3:1000, 4:1075, 5:1150}[nivel_vis]
+                if nome_vis not in st.session_state.keys_presentes: st.session_state.keys_presentes.append(nome_vis)
+                if is_gol: st.session_state.visitantes_goleiros.append(nome_vis)
+                st.rerun()
 
     opcoes_totais = list(dict.fromkeys(jogadores_base + goleiros_base + st.session_state.visitantes_list))
-
-    for p in st.session_state.keys_presentes:
-        if (p in goleiros_base) or (p in st.session_state.visitantes_goleiros):
-            if p not in st.session_state.keys_goleiros:
-                st.session_state.keys_goleiros.append(p)
-    st.session_state.keys_goleiros = [g for g in st.session_state.keys_goleiros if g in st.session_state.keys_presentes]
-
-    # HOTFIX 2: Selecionar Todos em PT-BR
-    if st.checkbox("☑️ Selecionar Todos os Jogadores"):
+    
+    # HOTFIX: Botão de Pulso para Selecionar Todos
+    if st.button("☑️ Selecionar Todos os Jogadores", use_container_width=True):
         st.session_state.keys_presentes = opcoes_totais
 
-    presentes = st.multiselect("Quem vai pro jogo hoje?", opcoes_totais, key="keys_presentes", placeholder="Escolha os jogadores...")
+    presentes = st.multiselect("Quem vai pro jogo?", opcoes_totais, key="keys_presentes")
+    
+    st.markdown("### 2️⃣ Goleiros")
+    goleiros_sel = st.multiselect("Selecione os Goleiros:", st.session_state.keys_presentes, key="keys_goleiros")
 
-    st.markdown("### 2️⃣ Definição de Goleiros")
-    st.write("Quem da lista acima vai assumir o Gol?")
-
-    goleiros_selecionados = st.multiselect("Selecione os Goleiros:", st.session_state.keys_presentes, key="keys_goleiros")
-
-    presentes_linha = [p for p in presentes if p not in goleiros_selecionados]
-    presentes_goleiros = goleiros_selecionados
-
-    todas_as_pessoas_count = len(presentes)
-
-    st.markdown("---")
-    if todas_as_pessoas_count > 0 and todas_as_pessoas_count % 2 != 0:
-        st.warning("⚠️ **Atenção:** Número ÍMPAR. A IA fará o time mais fraco jogar com 1 a mais para equilibrar.")
-
-    if st.button("⚖️ GERAR OS MELHORES TIMES", use_container_width=True):
-        if todas_as_pessoas_count < 10:
-            st.error(f"🚨 Você selecionou apenas {todas_as_pessoas_count} presentes. O mínimo para dar jogo é 10! Insira visitantes.")
+    if st.button("⚖️ GERAR TIMES", use_container_width=True):
+        if len(presentes) < 10: st.error("Mínimo 10 jogadores!")
         else:
             st.session_state.sorteio_count += 1
-            st.session_state.hora_agora = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=-3))).strftime("%d/%m/%Y às %H:%M:%S")
-            
-            with st.spinner('A IA está separando os goleiros e equilibrando a linha na Planilha...'):
-                ratings_cloud = obter_ratings_atuais()
-                
-                for v_nome, v_rating in st.session_state.get("visitantes_ratings", {}).items():
-                    if v_nome not in ratings_cloud:  
-                        ratings_cloud[v_nome] = v_rating
-                
-                mock_linha = [{"nome": p, "rating": ratings_cloud.get(p, 1000), "goleiro": False} for p in presentes_linha]
-                mock_goleiros = [{"nome": g, "rating": ratings_cloud.get(g, 1000), "goleiro": True} for g in presentes_goleiros]
-                
-                time_a, time_b, gap = MatchEngine.balance_teams(mock_linha, mock_goleiros)
-                
-                # CHAMA REGISTRO NA NUVEM!
-                registrar_auditoria_cloud(st.session_state.sorteio_count, gap, time_a, time_b)
-                
-                st.session_state.res_time_a = time_a
-                st.session_state.res_time_b = time_b
-                st.session_state.res_gap = gap
+            ratings = obter_ratings_atuais()
+            for v, r in st.session_state.visitantes_ratings.items():
+                if v not in ratings: ratings[v] = r
+            mock_l = [{"nome": p, "rating": ratings.get(p, 1000), "goleiro": False} for p in presentes if p not in goleiros_sel]
+            mock_g = [{"nome": g, "rating": ratings.get(g, 1000), "goleiro": True} for g in goleiros_sel]
+            ta, tb, gap = MatchEngine.balance_teams(mock_l, mock_g)
+            registrar_auditoria_cloud(st.session_state.sorteio_count, gap, ta, tb)
+            st.session_state.res_time_a, st.session_state.res_time_b, st.session_state.res_gap = ta, tb, gap
 
     if "res_time_a" in st.session_state:
-        st.success("Equilíbrio Matemático Encontrado! 🎯")
-        ta, tb = st.columns(2)
-        with ta:
-            st.markdown("<h3 style='color: #00d4ff; text-align: center; border-bottom: 2px solid #00d4ff;'>🔵 TIME AZUL</h3>", unsafe_allow_html=True)
-            for j in st.session_state.res_time_a:
-                icon = "🧤" if j.get("goleiro") else "🏃"
-                st.write(f"&nbsp;&nbsp;**{icon} {j['nome']}** \n`⭐ ELO: {j['rating']}`")
-            st.caption(f"🛡️ Força Time: {sum(x['rating'] for x in st.session_state.res_time_a)}")
-                
-        with tb:
-            st.markdown("<h3 style='color: #8a2be2; text-align: center; border-bottom: 2px solid #8a2be2;'>🟣 TIME ROXO</h3>", unsafe_allow_html=True)
-            for j in st.session_state.res_time_b:
-                icon = "🧤" if j.get("goleiro") else "🏃"
-                st.write(f"&nbsp;&nbsp;**{icon} {j['nome']}** \n`⭐ ELO: {j['rating']}`")
-            st.caption(f"🛡️ Força Time: {sum(x['rating'] for x in st.session_state.res_time_b)}")
+        st.success("Times Equilibrados! 🎯")
+        c1, c2 = st.columns(2)
+        for idx, (col, time, cor, label) in enumerate(zip([c1, c2], [st.session_state.res_time_a, st.session_state.res_time_b], ["#00d4ff", "#8a2be2"], ["AZUL", "ROXO"])):
+            with col:
+                st.markdown(f"<h3 style='color: {cor}; text-align: center; border-bottom: 2px solid {cor};'>{label}</h3>", unsafe_allow_html=True)
+                for j in time: st.write(f"**{'🧤' if j.get('goleiro') else '🏃'} {j['nome']}** \n`ELO: {j['rating']}`")
         
-        st.markdown("---")
-        st.info(f"⚖️ Diferença Matemática: {st.session_state.res_gap} pontos.")
+        # Montagem da mensagem WhatsApp
+        msg = f"⚽ *SORTEIO PATOTA AJAX* ⚽\n📅 {datetime.datetime.now().strftime('%d/%m/%Y')}\n\n🔵 *TIME AZUL*\n"
+        for j in st.session_state.res_time_a: msg += f"{'🧤' if j.get('goleiro') else '🏃'} {j['nome']}\n"
+        msg += f"\n🟣 *TIME ROXO*\n"
+        for j in st.session_state.res_time_b: msg += f"{'🧤' if j.get('goleiro') else '🏃'} {j['nome']}\n"
+        msg += f"\n⚖️ *Equilíbrio:* {st.session_state.res_gap} pts"
         
-        # HOTFIX 3 e 4: FUNÇÃO COPIAR WHATSAPP (Com V.A.R. embutido)
-        msg_wpp = f"⚽ *SORTEIO PATOTA AJAX* ⚽\n"
-        msg_wpp += f"📅 {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=-3))).strftime('%d/%m/%Y')}\n\n"
-        
-        msg_wpp += "🔵 *TIME AZUL*\n"
-        for j in st.session_state.res_time_a:
-            icon = "🧤" if j.get("goleiro") else "🏃"
-            msg_wpp += f"{icon} {j['nome']}\n"
-        
-        msg_wpp += "\n🟣 *TIME ROXO*\n"
-        for j in st.session_state.res_time_b:
-            icon = "🧤" if j.get("goleiro") else "🏃"
-            msg_wpp += f"{icon} {j['nome']}\n"
-            
-        msg_wpp += f"\n⚖️ *Equilíbrio:* {st.session_state.res_gap} pts"
-        
-        # Leitura da Auditoria recente para injetar no WhatsApp
         registros_var = ler_auditoria_cloud()
-        if len(registros_var) >= 2:
-            msg_wpp += f"\n\n🚨 *V.A.R. Cloud:* Sorteio nº {st.session_state.sorteio_count}.\n"
-            msg_wpp += f"Penúltimo: {registros_var[-2]['Data_Hora']}\n"
-            msg_wpp += f"Último: {registros_var[-1]['Data_Hora']}"
-        elif len(registros_var) == 1:
-            msg_wpp += f"\n\n🕒 *Auditoria:* Sorteio Oficial nº {st.session_state.sorteio_count} ({st.session_state.hora_agora})"
+        if len(registros_var) >= 2: msg += f"\n\n🚨 *V.A.R.:* Sorteio nº {st.session_state.sorteio_count}.\nÚltimo: {registros_var[-1]['Data_Hora']}"
         
-        st.info("👇 Clique no ícone de 'Copiar' no canto superior direito da caixa abaixo para enviar no WhatsApp:")
-        # Renderiza como bloco de código. Isso cria automaticamente o botão nativo de copiar do Streamlit.
-        st.code(msg_wpp, language="markdown")
+        msg += "\n\n🔗 *Preencher Resultado:* Acesse o atalho Patota Ajax Portal · Streamlit (https://patota.streamlit.app/)"
         
-        # Alertas visuais do VAR na interface (Mantidos)
-        if len(registros_var) >= 2:
-            st.error(f"🚨 **V.A.R. Cloud** ativado: Este é o sorteio **nº {st.session_state.sorteio_count}**.\n\n"
-                     f"- O **penúltimo** sorteio ocorreu às: `{registros_var[-2]['Data_Hora']}`\n"
-                     f"- Este **último** sorteio ocorreu às: `{registros_var[-1]['Data_Hora']}`")
-        elif len(registros_var) == 1:
-            st.warning(f"🕒 **Auditoria:** Sorteio Oficial nº {st.session_state.sorteio_count} ({st.session_state.hora_agora})")
-        
-        if st.session_state.sorteio_count > 1:
-            st.error("🚨 ALERTA DA IA: Múltiplas tentativas de escolha de time detectadas.")
-        
-        def save_and_clear_match():
+        # Botão HTML Customizado para Cópia
+        msg_safe = msg.replace('`', "'").replace('\n', '\\n')
+        components.html(f"""
+            <button onclick="navigator.clipboard.writeText(`{msg_safe}`).then(() => {{ this.innerText = '✅ Copiado com Sucesso!'; this.style.backgroundColor = '#128C7E'; }})" 
+            style="width: 100%; padding: 15px; background-color: #25D366; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer;">
+                📋 COPIAR RESUMO PARA WHATSAPP
+            </button>
+        """, height=65)
+
+        if st.button("💾 INICIAR PARTIDA OFICIAL", use_container_width=True):
             salvar_partida_pendente(st.session_state.res_time_a, st.session_state.res_time_b)
-            if 'res_time_a' in st.session_state: del st.session_state.res_time_a
-            if 'res_time_b' in st.session_state: del st.session_state.res_time_b
-            st.session_state.keys_presentes = []
-            st.session_state.keys_goleiros = []
-            st.session_state.sorteio_count = 0
-            
-        if st.button("💾 ENVIAR PARA A NUVEM E INICIAR PARTIDA OFICIAL", use_container_width=True, on_click=save_and_clear_match):
-            st.success("Tudo salvo! Aguardando o preenchimento do placar final.")
+            st.session_state.keys_presentes, st.session_state.keys_goleiros, st.session_state.sorteio_count = [], [], 0
+            st.rerun()
+
+# --- RODAPÉ DISCRETO ---
+st.markdown("---")
+st.caption("Layout otimizado para celular | Suporte: Rafael Guimarães")
