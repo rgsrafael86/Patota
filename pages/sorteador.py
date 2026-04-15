@@ -316,6 +316,10 @@ with tab_principal:
                 st.session_state.visitantes_ratings[nome_vis] = {1:850, 2:925, 3:1000, 4:1075, 5:1150}[nivel_vis]
                 if nome_vis not in st.session_state.keys_presentes: st.session_state.keys_presentes.append(nome_vis)
                 if is_gol: st.session_state.visitantes_goleiros.append(nome_vis)
+                
+                # LIMPEZA DOS CAMPOS APÓS INSERIR
+                st.session_state.temp_v_nome = ""
+                st.session_state.temp_v_gol = False
                 st.rerun()
 
     opcoes_totais = list(dict.fromkeys(jogadores_base + goleiros_base + st.session_state.visitantes_list))
