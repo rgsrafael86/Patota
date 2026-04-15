@@ -156,4 +156,4 @@ else: st.success("✅ Ninguém devendo!")
 with st.expander("🕵️‍♂️ AUDITORIA DOS CÁLCULOS"):
     df_audit = df_fluxo[['Mes_Ref', 'Nome', 'Tipo', 'Valor', 'Status', 'Efeito_Caixa']].copy().iloc[::-1]
     def highlight_vals(val): return f"color: {'#ccff33' if val > 0 else '#ff4444' if val < 0 else '#444'}; font-weight: bold"
-    st.dataframe(df_audit.style.applymap(highlight_vals, subset=['Efeito_Caixa']).format({'Valor': 'R$ {:.2f}', 'Efeito_Caixa': 'R$ {:.2f}'}), use_container_width=True)
+    st.dataframe(df_audit.style.map(highlight_vals, subset=['Efeito_Caixa']).format({'Valor': 'R$ {:.2f}', 'Efeito_Caixa': 'R$ {:.2f}'}), use_container_width=True)
