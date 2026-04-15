@@ -154,19 +154,41 @@ class MatchEngine:
         elif len(goalkeepers_list) == 1:
             gk_a.append(goalkeepers_list[0]) 
 
-        total_players = len(players_list) + len(goalkeepers_list)
+        # --- FATOR CAOS: Adiciona uma leve variação (±5%) para evitar times repetidos ---
+        players_calc = []
+        for p in players_list:
+            p_copy = p.copy()
+            variacao = random.uniform(0.95, 1.05)
+            p_copy['rating_calc'] = float(p.get('rating', 1000)) * variacao
+            players_calc.append(p_copy)
+            
+        gk_calc_a = [g.copy() for g in gk_a]
+        for g in gk_calc_a: g['rating_calc'] = float(g.get('rating', 1000)) * random.uniform(0.95, 1.05)
+        
+        gk_calc_b = [g.copy() for g in gk_b]
+        for g in gk_calc_b: g['rating_calc'] = float(g.get('rating', 1000)) * random.uniform(0.95, 1.05)
+
+        total_players = len(players_calc) + len(goalkeepers_list)
         target_size_a = total_players // 2
         needed_a = target_size_a - len(gk_a)
+        
         best_diff, best_combination = float('inf'), None
-        all_combinations = list(combinations(range(len(players_list)), max(0, needed_a)))
-        if len(all_combinations) > 500:
-            all_combinations = random.sample(all_combinations, 500)
+        all_combinations = list(combinations(range(len(players_calc)), max(0, needed_a)))
+        
+        # Embaralha as combinações para que o "amostragem" seja randômica
+        random.shuffle(all_combinations)
+        
+        # Limite de processamento para não travar o app
+        if len(all_combinations) > 1000:
+            all_combinations = all_combinations[:1000]
 
         for combo in all_combinations:
             team_a_indices = set(combo)
-            team_b_indices = set(range(len(players_list))) - team_a_indices
-            sum_a = sum(float(players_list[i].get('rating', 1000)) for i in team_a_indices) + sum(float(g.get('rating', 1000)) for g in gk_a)
-            sum_b = sum(float(players_list[i].get('rating', 1000)) for i in team_b_indices) + sum(float(g.get('rating', 1000)) for g in gk_b)
+            team_b_indices = set(range(len(players_calc))) - team_a_indices
+            
+            sum_a = sum(p['rating_calc'] for i, p in enumerate(players_calc) if i in team_a_indices) + sum(g['rating_calc'] for g in gk_calc_a)
+            sum_b = sum(p['rating_calc'] for i, p in enumerate(players_calc) if i in team_b_indices) + sum(g['rating_calc'] for g in gk_calc_b)
+            
             diff = abs(sum_a - sum_b)
             if diff < best_diff:
                 best_diff = diff
