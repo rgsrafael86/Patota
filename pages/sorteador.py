@@ -205,6 +205,23 @@ class MatchEngine:
 st.title("🧠 Sorteador Ajax")
 st.write("Layout otimizado para o seu celular 📱")
 
+# HOTFIX 1: Força contraste e visibilidade no campo de input
+st.markdown("""
+    <style>
+    div[data-baseweb="input"] {
+        background-color: #ffffff !important;
+        border: 1px solid #cccccc !important;
+    }
+    div[data-baseweb="input"] input {
+        color: #000000 !important;
+        caret-color: #000000 !important;
+    }
+    div[data-baseweb="input"] input::placeholder {
+        color: #7f8c8d !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 # ABAS NATIVAS STREAMLIT
 tab_principal, tab_audit = st.tabs(["⚙️ Sorteador Oficial", "🕵️‍♂️ V.A.R. Administrativo"])
 
@@ -310,7 +327,7 @@ with tab_principal:
         st.session_state.temp_is_gol = False
         st.session_state.temp_nivel = 3
 
-    st.write("Adicione o Visitante e sua Força (1=Péssimo, 3=Médio, 5=Craque):")
+    st.write("Adicione o Visitante e sua Força (1=Básico, 3=Médio, 5=Craque):")
     col_v1, col_v2, col_v3, col_v4 = st.columns([4, 2, 2, 3])
     with col_v1:
         st.text_input("Nome do Visitante", key="temp_visitante", placeholder="Ex: Jonas", label_visibility="collapsed")
@@ -329,7 +346,11 @@ with tab_principal:
                 st.session_state.keys_goleiros.append(p)
     st.session_state.keys_goleiros = [g for g in st.session_state.keys_goleiros if g in st.session_state.keys_presentes]
 
-    presentes = st.multiselect("Quem vai pro jogo hoje? (Todos)", opcoes_totais, key="keys_presentes")
+    # HOTFIX 2: Selecionar Todos em PT-BR
+    if st.checkbox("☑️ Selecionar Todos os Jogadores"):
+        st.session_state.keys_presentes = opcoes_totais
+
+    presentes = st.multiselect("Quem vai pro jogo hoje?", opcoes_totais, key="keys_presentes", placeholder="Escolha os jogadores...")
 
     st.markdown("### 2️⃣ Definição de Goleiros")
     st.write("Quem da lista acima vai assumir o Gol?")
@@ -391,7 +412,7 @@ with tab_principal:
         st.markdown("---")
         st.info(f"⚖️ Diferença Matemática: {st.session_state.res_gap} pontos.")
         
-        # --- FUNÇÃO COPIAR WHATSAPP ---
+        # HOTFIX 3 e 4: FUNÇÃO COPIAR WHATSAPP (Com V.A.R. embutido)
         msg_wpp = f"⚽ *SORTEIO PATOTA AJAX* ⚽\n"
         msg_wpp += f"📅 {datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=-3))).strftime('%d/%m/%Y')}\n\n"
         
@@ -407,11 +428,20 @@ with tab_principal:
             
         msg_wpp += f"\n⚖️ *Equilíbrio:* {st.session_state.res_gap} pts"
         
-        st.info("👇 Copie o texto abaixo e cole no WhatsApp:")
-        st.text_area("Texto para WhatsApp", msg_wpp, height=250, label_visibility="collapsed")
-        
-        # Leitura da Auditoria recente
+        # Leitura da Auditoria recente para injetar no WhatsApp
         registros_var = ler_auditoria_cloud()
+        if len(registros_var) >= 2:
+            msg_wpp += f"\n\n🚨 *V.A.R. Cloud:* Sorteio nº {st.session_state.sorteio_count}.\n"
+            msg_wpp += f"Penúltimo: {registros_var[-2]['Data_Hora']}\n"
+            msg_wpp += f"Último: {registros_var[-1]['Data_Hora']}"
+        elif len(registros_var) == 1:
+            msg_wpp += f"\n\n🕒 *Auditoria:* Sorteio Oficial nº {st.session_state.sorteio_count} ({st.session_state.hora_agora})"
+        
+        st.info("👇 Clique no ícone de 'Copiar' no canto superior direito da caixa abaixo para enviar no WhatsApp:")
+        # Renderiza como bloco de código. Isso cria automaticamente o botão nativo de copiar do Streamlit.
+        st.code(msg_wpp, language="markdown")
+        
+        # Alertas visuais do VAR na interface (Mantidos)
         if len(registros_var) >= 2:
             st.error(f"🚨 **V.A.R. Cloud** ativado: Este é o sorteio **nº {st.session_state.sorteio_count}**.\n\n"
                      f"- O **penúltimo** sorteio ocorreu às: `{registros_var[-2]['Data_Hora']}`\n"
