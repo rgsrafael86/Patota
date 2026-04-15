@@ -179,28 +179,26 @@ class MatchEngine:
 # --- INTERFACE ---
 st.title("🧠 Sorteador Ajax")
 
-# --- ISOLAMENTO CSS ESTRITO ---
-# Aplica cor branca com texto preto APENAS nos inputs textuais (Visitante) e numéricos (Placar).
-# O uso de stMultiSelect e stSelectbox permanece intocado pelo motor nativo do Streamlit.
+# --- ISOLAMENTO CSS ESTRITO: Força Caixa Escura e Texto Branco ---
 st.markdown("""
     <style>
     div[data-testid="stTextInput"] div[data-baseweb="input"],
     div[data-testid="stNumberInput"] div[data-baseweb="input"] {
-        background-color: #ffffff !important;
+        background-color: #1e1e1e !important; /* Força fundo escuro */
         border-radius: 6px !important;
-        border: 1px solid #cccccc !important;
+        border: 1px solid #444444 !important;
     }
     
     div[data-testid="stTextInput"] input,
     div[data-testid="stNumberInput"] input {
-        color: #000000 !important;
-        -webkit-text-fill-color: #000000 !important;
-        caret-color: #000000 !important;
+        color: #ffffff !important; /* Força texto branco */
+        -webkit-text-fill-color: #ffffff !important;
+        caret-color: #ffffff !important; /* Força cursor branco */
     }
     
     div[data-testid="stTextInput"] input::placeholder {
-        color: #7f8c8d !important;
-        -webkit-text-fill-color: #7f8c8d !important;
+        color: #aaaaaa !important;
+        -webkit-text-fill-color: #aaaaaa !important;
     }
     </style>
 """, unsafe_allow_html=True)
