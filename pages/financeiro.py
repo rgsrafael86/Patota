@@ -36,15 +36,17 @@ def limpar_moeda(valor):
 
 @st.cache_data(ttl=5)
 def carregar_dados():
-    # LINK DA PLANILHA ISOLADO - PRONTO PARA SER JOGADO PRO SECRETS
     url_fluxo = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTp9Eoyr5oJkOhw-7GElhvo2p8h73J_kbsee2JjUDjPNO18Lv7pv5oU3w7SC9d_II2WVRB_E4TUd1XK/pub?gid=1108345129&single=true&output=csv"
     url_param = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTp9Eoyr5oJkOhw-7GElhvo2p8h73J_kbsee2JjUDjPNO18Lv7pv5oU3w7SC9d_II2WVRB_E4TUd1XK/pub?gid=972176032&single=true&output=csv"
     
     try:
         df_f = pd.read_csv(url_fluxo)
         df_p = pd.read_csv(url_param)
-        if df_f['Valor'].dtype == 'object': df_f['Valor'] = df_f['Valor'].apply(limpar_moeda)
-        if df_p['Valor'].dtype == 'object': df_p['Valor'] = df_p['Valor'].apply(limpar_moeda)
+        # Limpa string moeda e converte para float (errors='coerce' transforma lixo em NaN)
+        df_f['Valor'] = df_f['Valor'].apply(limpar_moeda)
+        df_f['Valor'] = pd.to_numeric(df_f['Valor'], errors='coerce').fillna(0.0)
+        df_p['Valor'] = df_p['Valor'].apply(limpar_moeda)
+        df_p['Valor'] = pd.to_numeric(df_p['Valor'], errors='coerce').fillna(0.0)
         return df_f, df_p
     except: return None, None
 
@@ -77,7 +79,7 @@ df_fluxo['Efeito_Caixa'] = df_fluxo.apply(calcular_efeito_caixa, axis=1)
 saldo_atual = df_fluxo['Efeito_Caixa'].sum()
 
 pendencias = df_fluxo[(df_fluxo['Status'] == 'Pendente') & (df_fluxo['Tipo'] == 'Entrada')]
-total_pendente = pendencias['Valor'].sum()
+total_pendente = float(pd.to_numeric(pendencias['Valor'], errors='coerce').fillna(0).sum())
 
 try:
     meta_val = df_parametros[df_parametros['Parametro'] == 'Meta_Reserva']['Valor'].values[0]
