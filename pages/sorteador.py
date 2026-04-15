@@ -32,7 +32,7 @@ def salvar_partida_pendente(time_a, time_b):
     sh = get_gspread_client()
     ws = sh.worksheet("Historico_Partidas")
     partida_id = str(uuid.uuid4())[:8]
-    agora = datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+    agora = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=-3))).strftime("%d/%m/%Y %H:%M:%S")
     row = [partida_id, agora, json.dumps(time_a, ensure_ascii=False), json.dumps(time_b, ensure_ascii=False), "Pendente", "", ""]
     ws.append_row(row)
     return partida_id
@@ -60,7 +60,7 @@ def registrar_auditoria_cloud(sorteio_num, gap, time_a, time_b):
     try:
         sh = get_gspread_client()
         ws = sh.worksheet("Audit_Sorteios")
-        agora = datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        agora = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=-3))).strftime("%d/%m/%Y %H:%M:%S")
         az = ", ".join([p["nome"] for p in time_a])
         rx = ", ".join([p["nome"] for p in time_b])
         status = "Autêntico" if sorteio_num == 1 else "Suspeito"
@@ -350,7 +350,7 @@ with tab_principal:
             st.error(f"🚨 Você selecionou apenas {todas_as_pessoas_count} presentes. O mínimo para dar jogo é 10! Insira visitantes.")
         else:
             st.session_state.sorteio_count += 1
-            st.session_state.hora_agora = datetime.datetime.now().strftime("%d/%m/%Y às %H:%M:%S")
+            st.session_state.hora_agora = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=-3))).strftime("%d/%m/%Y às %H:%M:%S")
             
             with st.spinner('A IA está separando os goleiros e equilibrando a linha na Planilha...'):
                 ratings_cloud = obter_ratings_atuais()
