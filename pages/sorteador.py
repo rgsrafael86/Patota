@@ -166,8 +166,11 @@ def obter_base_de_jogadores():
         records = ws_base.get_all_records()
         for r in records:
             nome, cat, status = str(r.get("Nome", "")).strip(), str(r.get("Categoria", "")).strip(), str(r.get("Status", "")).strip()
-            if not nome or cat.lower() == "fornecedor" or status.lower() == "inativo": continue
-            nome_display = nome + " (DM)" if status.lower() == "dm" else nome
+            # Poka-Yoke: Pula quem está inativo, é fornecedor ou está no Departamento Médico (DM)
+            if not nome or cat.lower() in ["fornecedor", "dm"] or status.lower() in ["inativo", "dm"]: 
+                continue
+                
+            nome_display = nome
             if cat.lower() == "goleiro": gols.append(nome_display)
             else: jog_linha.append(nome_display)
     except:
