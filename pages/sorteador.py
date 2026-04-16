@@ -114,9 +114,14 @@ def finalizar_partida(row_index, gols_a, gols_b, time_a, time_b):
     ws_hist.update_cell(row_index, 6, gols_a)
     ws_hist.update_cell(row_index, 7, gols_b)
     
-    ws_rank = sh.worksheet("Ranking_IA")
-    records = ws_rank.get_all_records()
-    ranking_db = {str(r['Nome']): r for r in records}
+    try:
+        ws_rank = sh.worksheet("Ranking_IA")
+        records = ws_rank.get_all_records()
+        ranking_db = {str(r['Nome']): r for r in records}
+    except Exception as e:
+        # Se falhar ao ler (ex: aba vazia ou erro de API), gera ranking vazio seguro
+        st.warning(f"⚠️ Nota: Não foi possível ler o Ranking IA agora. Usando base de 1000 pts. Erro: {str(e)}")
+        ranking_db = {}
     
     diff = abs(gols_a - gols_b)
     k_factor = 32 if diff < 3 else (48 if diff < 5 else 64)
@@ -288,6 +293,10 @@ with tab_principal:
         if st.button("🏆 Finalizar Partida", use_container_width=True):
             finalizar_partida(pendente["row_index"], gols_a, gols_b, pendente["time_a"], pendente["time_b"])
             st.success("ELO Recalculado!")
+            # Limpa a tela para o próximo sorteio
+            chaves = ['res_time_a', 'res_time_b', 'res_gap', 'keys_presentes', 'match_saved']
+            for c in chaves:
+                if c in st.session_state: del st.session_state[c]
             st.rerun()
         st.stop()
 
