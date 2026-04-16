@@ -79,9 +79,12 @@ def obter_contagem_audit_hoje():
         
         if not regs_hoje: return 0, None
         
-        # Retorna o total de hoje e o horário do último para o V.A.R.
-        parts = regs_hoje[-1].get("Data_Hora", "").split(" ")
-        ultimo_horario = parts[1] if len(parts) > 1 else "---"
+        # Retorna o total de hoje e o horário do ANTERIOR para o V.A.R. (se houver mais de 1)
+        if len(regs_hoje) > 1:
+            ultimo_horario = regs_hoje[-2].get("Data_Hora", "").split(" ")[1]
+        else:
+            ultimo_horario = regs_hoje[-1].get("Data_Hora", "").split(" ")[1]
+            
         return len(regs_hoje), ultimo_horario
     except:
         return 0, None
