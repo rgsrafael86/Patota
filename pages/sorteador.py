@@ -41,36 +41,34 @@ def obter_partida_pendente():
         try:
             sh = get_gspread_client()
             ws = sh.worksheet("Historico_Partidas")
-            # Otimização extrema: Busca apenas as últimas 20 linhas para economizar cota
-            rows = ws.get_all_values()
-            if len(rows) <= 1: return None
+            records = ws.get_all_records()
+            if not records: return None
             
-            headers = rows[0]
-            data_rows = rows[1:]
-            # Olhamos apenas os últimos registros (o mais provável de estar pendente)
-            for i, r_values in enumerate(data_rows):
-                # Usar índices fixos é mais seguro contra mudanças de nomes nas colunas
-                # 0: ID, 1: Data, 2: Time A, 3: Time B, 4: Status
-                if len(r_values) > 4 and str(r_values[4]).strip().lower() == "pendente":
+            # Procuramos de trás para frente (o último é o mais provável)
+            for i, r in enumerate(reversed(records)):
+                if str(r.get("Status")).strip().lower() == "pendente":
                     import ast
                     try:
-                        ta = ast.literal_eval(str(r_values[2]))
-                        tb = ast.literal_eval(str(r_values[3]))
+                        # Tenta carregar como lista de dicts (JSON ou Literais Python)
+                        t_azul_raw = str(r.get("Time_Azul", r.get("Time_A", "[]")))
+                        t_roxo_raw = str(r.get("Time_Roxo", r.get("Time_B", "[]")))
+                        ta = ast.literal_eval(t_azul_raw)
+                        tb = ast.literal_eval(t_roxo_raw)
                     except:
                         ta, tb = [], []
                         
                     return {
-                        "id": r_values[0],
+                        "id": r.get("ID_Partida", r.get("ID")),
                         "time_a": ta,
                         "time_b": tb,
-                        "data": r_values[1],
-                        "row_index": i + 2 
+                        "data": r.get("Data_Hora"),
+                        "row_index": len(records) - i + 1 
                     }
             return None
         except Exception as e:
             if tentativa == 0:
-                time.sleep(2) # Espera o Google "respirar"
-                st.cache_data.clear() # Limpa cache para forçar nova tentativa
+                time.sleep(2)
+                st.cache_data.clear()
             else:
                 raise e
     return None
