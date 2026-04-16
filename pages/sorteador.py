@@ -35,23 +35,20 @@ def salvar_partida_pendente(time_a, time_b):
     return partida_id
 
 def obter_partida_pendente():
-    try:
-        sh = get_gspread_client()
-        ws = sh.worksheet("Historico_Partidas")
-        records = ws.get_all_records()
-        if not records: return None
-        last = records[-1]
-        if str(last.get("Status")).strip().lower() == "pendente":
-            return {
-                "id": last.get("ID_Partida"),
-                "time_a": json.loads(last.get("Time_Azul")),
-                "time_b": json.loads(last.get("Time_Roxo")),
-                "data": last.get("Data_Hora"),
-                "row_index": len(records) + 1 
-            }
-        return None
-    except:
-        return None
+    sh = get_gspread_client()
+    ws = sh.worksheet("Historico_Partidas")
+    records = ws.get_all_records()
+    if not records: return None
+    last = records[-1]
+    if str(last.get("Status")).strip().lower() == "pendente":
+        return {
+            "id": last.get("ID_Partida"),
+            "time_a": json.loads(last.get("Time_Azul")),
+            "time_b": json.loads(last.get("Time_Roxo")),
+            "data": last.get("Data_Hora"),
+            "row_index": len(records) + 1 
+        }
+    return None
 
 def ler_auditoria_cloud():
     try:
