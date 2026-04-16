@@ -34,6 +34,7 @@ def salvar_partida_pendente(time_a, time_b):
     ws.append_row(row)
     return partida_id
 
+@st.cache_data(ttl=10)
 def obter_partida_pendente():
     sh = get_gspread_client()
     ws = sh.worksheet("Historico_Partidas")
@@ -107,9 +108,10 @@ def registrar_auditoria_cloud(gap, time_a, time_b):
 def finalizar_partida(row_index, gols_a, gols_b, time_a, time_b):
     sh = get_gspread_client()
     ws_hist = sh.worksheet("Historico_Partidas")
-    ws_hist.update_cell(row_index, 5, "Finalizada")
-    ws_hist.update_cell(row_index, 6, gols_a)
-    ws_hist.update_cell(row_index, 7, gols_b)
+    
+    # Otimização: Atualiza placar e status em uma única chamada de intervalo (Batch)
+    # Colunas E, F, G são Status, Gols_Azul, Gols_Roxo (Confirmar se são 5,6,7)
+    ws_hist.update(range_name=f"E{row_index}:G{row_index}", values=[["Finalizada", gols_a, gols_b]])
     
     try:
         ws_rank = sh.worksheet("Ranking_IA")
@@ -288,13 +290,16 @@ with tab_principal:
             for j in pendente['time_b']: st.markdown(f"<span style='color:#ccc; font-size:14px;'>{'🧤' if j.get('goleiro') else '🏃'} {j['nome']}</span>", unsafe_allow_html=True)
             gols_b = st.number_input("Gols Roxo", min_value=0, max_value=50, value=0, key="gols_b")
         if st.button("🏆 Finalizar Partida", use_container_width=True):
-            finalizar_partida(pendente["row_index"], gols_a, gols_b, pendente["time_a"], pendente["time_b"])
-            st.success("ELO Recalculado!")
-            # Limpa a tela para o próximo sorteio
-            chaves = ['res_time_a', 'res_time_b', 'res_gap', 'keys_presentes', 'match_saved']
-            for c in chaves:
-                if c in st.session_state: del st.session_state[c]
-            st.rerun()
+            with st.spinner("Computando resultados..."):
+                finalizar_partida(pendente["row_index"], gols_a, gols_b, pendente["time_a"], pendente["time_b"])
+                # Força a limpeza do cache para reconhecer que não há mais pendências
+                st.cache_data.clear()
+                st.success("ELO Recalculado!")
+                # Limpa a tela para o próximo sorteio
+                chaves = ['res_time_a', 'res_time_b', 'res_gap', 'keys_presentes', 'match_saved']
+                for c in chaves:
+                    if c in st.session_state: del st.session_state[c]
+                st.rerun()
         st.stop()
 
     jogadores_base, goleiros_base = obter_base_de_jogadores()
