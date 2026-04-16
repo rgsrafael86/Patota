@@ -289,22 +289,6 @@ with tab_principal:
             finalizar_partida(pendente["row_index"], gols_a, gols_b, pendente["time_a"], pendente["time_b"])
             st.success("ELO Recalculado!")
             st.rerun()
-            
-        # --- PERMITIR CÓPIA DO ZAP MESMO PENDENTE ---
-        st.markdown("---")
-        msg_pendente = f"⚽ *SORTEIO PATOTA AJAX* ⚽\n📅 {pendente['data'].split(' ')[0]}\n\n🔵 *TIME AZUL*\n"
-        for j in pendente['time_a']: msg_pendente += f"{'🧤' if j.get('goleiro') else '🏃'} {j['nome']}\n"
-        msg_pendente += f"\n🟣 *TIME ROXO*\n"
-        for j in pendente['time_b']: msg_pendente += f"{'🧤' if j.get('goleiro') else '🏃'} {j['nome']}\n"
-        msg_pendente += "\n🔗 *Preencher Resultado:* https://patota.streamlit.app/"
-        
-        msg_safe_p = msg_pendente.replace('`', "'").replace('\n', '\\n')
-        components.html(f"""
-            <button onclick="navigator.clipboard.writeText(`{msg_safe_p}`).then(() => {{ this.innerText = '✅ Copiado com Sucesso!'; this.style.backgroundColor = '#128C7E'; }})" 
-            style="width: 100%; padding: 10px; background-color: #25D366; color: white; border: none; border-radius: 8px; font-size: 14px; font-weight: bold; cursor: pointer;">
-                📋 COPIAR TIMES (WHATSAPP)
-            </button>
-        """, height=50)
         st.stop()
 
     jogadores_base, goleiros_base = obter_base_de_jogadores()
@@ -414,24 +398,22 @@ with tab_principal:
         
         msg_safe = msg.replace('`', "'").replace('\n', '\\n')
         
-        # MOSTRA CÓPIA ANTES DE SALVAR (PARA GARANTIR) E DEPOIS TAMBÉM
-        components.html(f"""
-            <button onclick="navigator.clipboard.writeText(`{msg_safe}`).then(() => {{ this.innerText = '✅ Copiado com Sucesso!'; this.style.backgroundColor = '#128C7E'; }})" 
-            style="width: 100%; padding: 15px; background-color: #25D366; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; box-shadow: 0px 4px 6px rgba(0,0,0,0.2);">
-                📋 COPIAR PARA WHATSAPP
-            </button>
-        """, height=65)
-
         if not st.session_state.match_saved:
-            if st.button("💾 INICIAR PARTIDA OFICIAL", use_container_width=True):
-                with st.spinner("Salvando partida..."):
+            if st.button("💾 SALVAR E GERAR WHATSAPP", use_container_width=True):
+                with st.spinner("Registrando partida na nuvem..."):
                     salvar_partida_pendente(st.session_state.res_time_a, st.session_state.res_time_b)
                     st.session_state.match_saved = True
                     st.rerun()
         else:
-            st.success("✅ Partida Registrada no Sistema!")
-            if st.button("🔄 NOVO SORTEIO (LIMPAR TELA)", use_container_width=True):
-                # Limpeza completa
+            st.success("✅ Partida Registrada! Copie o resumo abaixo:")
+            components.html(f"""
+                <button onclick="navigator.clipboard.writeText(`{msg_safe}`).then(() => {{ this.innerText = '✅ Copiado com Sucesso!'; this.style.backgroundColor = '#128C7E'; }})" 
+                style="width: 100%; padding: 15px; background-color: #25D366; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; box-shadow: 0px 4px 6px rgba(0,0,0,0.2);">
+                    📋 COPIAR PARA WHATSAPP
+                </button>
+            """, height=65)
+            
+            if st.button("🔄 CONCLUIR E LIMPAR TELA", use_container_width=True):
                 chaves = ['res_time_a', 'res_time_b', 'res_gap', 'keys_presentes', 'match_saved']
                 for c in chaves:
                     if c in st.session_state: del st.session_state[c]
