@@ -16,14 +16,9 @@ import streamlit.components.v1 as components
 def padronizar_nome(nome):
     """
     Normaliza a string para atuar como Chave Primária segura no Banco de Dados.
-    Transforma "João Vitor " em "JOAO VITOR".
-    Evita que erros de digitação criem ELOs duplicados para o mesmo visitante.
     """
-    if not nome:
-        return ""
-    # Remove espaços nas pontas e joga para maiúsculo
+    if not nome: return ""
     nome = str(nome).strip().upper()
-    # Remove acentuações (NFD separa a letra do acento, e o if ignora os acentos)
     nome = ''.join(c for c in unicodedata.normalize('NFD', nome) if unicodedata.category(c) != 'Mn')
     return nome
 
@@ -33,9 +28,7 @@ def padronizar_nome(nome):
 
 @st.cache_resource
 def get_gspread_client():
-    """Autentica e conecta a aplicação ao Google Sheets."""
     SHEET_ID = "1EJ-iSyYVbdafgAWawAQL2Kc-092OVfKtNvqbZg3eWfs"
-    
     if "gcp_service_account" in st.secrets:
         from google.oauth2.service_account import Credentials
         scopes = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
@@ -45,29 +38,24 @@ def get_gspread_client():
         gc = gspread.authorize(credentials)
     else:
         gc = gspread.service_account(filename='gcp_credenciais.json')
-    
     return gc.open_by_key(SHEET_ID)
 
 def salvar_partida_pendente(time_a, time_b):
-    """Grava os times recém-sorteados no GSheets com status 'Pendente'."""
     sh = get_gspread_client()
     ws = sh.worksheet("Historico_Partidas")
     partida_id = str(uuid.uuid4())[:8]
     agora = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=-3))).strftime("%d/%m/%Y %H:%M:%S")
-    
-    # Normalização de segurança antes de gravar o JSON na nuvem
     t_a_clean = [{"nome": padronizar_nome(p["nome"]), "goleiro": p["goleiro"], "rating": p["rating"]} for p in time_a]
     t_b_clean = [{"nome": padronizar_nome(p["nome"]), "goleiro": p["goleiro"], "rating": p["rating"]} for p in time_b]
-    
     row = [partida_id, agora, json.dumps(t_a_clean, ensure_ascii=False), json.dumps(t_b_clean, ensure_ascii=False), "Pendente", "", ""]
     ws.append_row(row)
     return partida_id
 
 @st.cache_data(ttl=60)
 def obter_partida_pendente():
-    """Lê o histórico e busca de trás para frente se a última partida está 'Pendente'."""
     import time
-    for tentativa in range(2):
+    # POKA-YOKE: Retry Pattern mais resiliente. Tenta 3 vezes antes de acusar erro.
+    for tentativa in range(3):
         try:
             sh = get_gspread_client()
             ws = sh.worksheet("Historico_Partidas")
@@ -94,9 +82,8 @@ def obter_partida_pendente():
                     }
             return None
         except Exception as e:
-            if tentativa == 0:
-                time.sleep(2)
-                st.cache_data.clear()
+            if tentativa < 2:
+                time.sleep(2) # Pausa para desafogar a API do Google, SEM apagar o cache.
             else:
                 raise e
     return None
@@ -114,7 +101,6 @@ def ler_auditoria_cloud():
         return []
 
 def obter_contagem_audit_hoje():
-    """Retorna a quantidade de sorteios já feitos hoje e a hora do último sorteio."""
     try:
         registros = ler_auditoria_cloud()
         if not registros: return 0, None
@@ -140,40 +126,39 @@ def obter_contagem_audit_hoje():
         return 0, None
 
 def registrar_auditoria_cloud(gap, time_a, time_b):
-    """Grava na aba V.A.R. quem foi sorteado."""
     try:
         sh = get_gspread_client()
         ws = sh.worksheet("Audit_Sorteios")
-        
         hoje_count, _ = obter_contagem_audit_hoje()
         sorteio_num = hoje_count + 1
-        
         agora = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=-3))).strftime("%d/%m/%Y %H:%M:%S")
         az = ", ".join([padronizar_nome(p["nome"]) for p in time_a])
         rx = ", ".join([padronizar_nome(p["nome"]) for p in time_b])
         status = "Autêntico" if sorteio_num == 1 else "Suspeito"
-        
         ws.append_row([agora, sorteio_num, status, gap, az, rx])
         return sorteio_num
     except:
         return 1
 
 # ==============================================================================
-# MÓDULO 3: MOTOR DE ELO E FECHAMENTO DE PARTIDA
+# MÓDULO 3: MOTOR DE ELO E FECHAMENTO DE PARTIDA (OTIMIZADO)
 # ==============================================================================
 
 def finalizar_partida(row_index, gols_a, gols_b, time_a, time_b):
-    """Atualiza a linha do placar e recalcula o ELO aplicando a Normalização."""
+    """Atualiza o placar e recalcula o ELO. Otimizado para evitar o Rate Limit do Google."""
+    import time
     sh = get_gspread_client()
     ws_hist = sh.worksheet("Historico_Partidas")
     
-    # Batch Update: Grava placar finalizado
+    # 1. Update do Histórico
     ws_hist.update(range_name=f"E{row_index}:G{row_index}", values=[["Finalizada", gols_a, gols_b]])
+    
+    # POKA-YOKE CONTRA RATE LIMIT (429 Error): Dá um respiro para a API do Google entre requisições.
+    time.sleep(1.5)
     
     try:
         ws_rank = sh.worksheet("Ranking_IA")
         records = ws_rank.get_all_records()
-        # Mapeia o Banco de Dados com chaves 100% normalizadas
         ranking_db = {padronizar_nome(r['Nome']): r for r in records}
     except Exception as e:
         st.warning(f"⚠️ Nota: Não foi possível ler o Ranking IA agora. Usando base de 1000 pts. Erro: {str(e)}")
@@ -215,12 +200,14 @@ def finalizar_partida(row_index, gols_a, gols_b, time_a, time_b):
     for _, s in sorted(ranking_db.items(), key=lambda x: float(x[1]['Rating']), reverse=True):
         linhas.append([s["Nome"], s["Posicao"], s["Rating"], s["Jogos"], s["Vitorias"], s["Derrotas"]])
     
-    ws_rank.clear()
+    # OTIMIZAÇÃO (Corte de 50% nas requisições): 
+    # Removido o ws_rank.clear(). Como a lista de ranking nunca diminui, sobrescrever 
+    # a partir do A1 é suficiente e poupa 1 chamada de API pesada, evitando erros de servidor.
+    time.sleep(1.0)
     ws_rank.update(values=linhas, range_name="A1")
 
 @st.cache_data(ttl=60)
 def obter_ratings_atuais():
-    """Baixa a coluna de Rating normalizando as chaves."""
     try:
         sh = get_gspread_client()
         ws_rank = sh.worksheet("Ranking_IA")
@@ -231,7 +218,6 @@ def obter_ratings_atuais():
 
 @st.cache_data(ttl=60)
 def obter_base_de_jogadores():
-    """Baixa o cadastro e normaliza os nomes da base."""
     jog_linha, gols = [], []
     try:
         sh = get_gspread_client()
@@ -241,13 +227,9 @@ def obter_base_de_jogadores():
             nome_raw = str(r.get("Nome", ""))
             cat = str(r.get("Categoria", "")).strip()
             status = str(r.get("Status", "")).strip()
-            
             nome_clean = padronizar_nome(nome_raw)
-            
-            # Impede inativos
             if not nome_clean or cat.lower() in ["fornecedor", "dm"] or status.lower() in ["inativo", "dm"]: 
                 continue
-                
             if cat.lower() == "goleiro": gols.append(nome_clean)
             else: jog_linha.append(nome_clean)
     except:
@@ -262,7 +244,6 @@ class MatchEngine:
     @staticmethod
     def balance_teams(players_list, goalkeepers_list):
         gk_a, gk_b = [], []
-        
         if len(goalkeepers_list) >= 2:
             gk_a.append(goalkeepers_list[0])
             gk_b.append(goalkeepers_list[1])
@@ -299,10 +280,8 @@ class MatchEngine:
         for combo in all_combinations:
             team_a_indices = set(combo)
             team_b_indices = set(range(len(players_calc))) - team_a_indices
-            
             sum_a = sum(p['rating_calc'] for i, p in enumerate(players_calc) if i in team_a_indices) + sum(g['rating_calc'] for g in gk_calc_a)
             sum_b = sum(p['rating_calc'] for i, p in enumerate(players_calc) if i in team_b_indices) + sum(g['rating_calc'] for g in gk_calc_b)
-            
             diff = abs(sum_a - sum_b)
             if diff < best_diff:
                 best_diff = diff
@@ -364,7 +343,7 @@ with tab_principal:
             gols_b = st.number_input("Gols Roxo", min_value=0, max_value=50, value=0, key="gols_b")
             
         if st.button("🏆 Finalizar Partida", use_container_width=True):
-            with st.spinner("Computando resultados e salvando Ranking..."):
+            with st.spinner("Computando resultados e salvando Ranking (Aguarde)..."):
                 finalizar_partida(pendente["row_index"], gols_a, gols_b, pendente["time_a"], pendente["time_b"])
                 obter_partida_pendente.clear()
                 obter_ratings_atuais.clear()
@@ -399,7 +378,6 @@ with tab_principal:
     if 'visitantes_ratings' not in st.session_state: st.session_state.visitantes_ratings = {}
 
     def inserir_visitante_callback():
-        # Captura e já injeta a normalização no visitante novo
         nome_cru = st.session_state.get('temp_v_nome', '')
         nome = padronizar_nome(nome_cru)
         nivel = st.session_state.get('temp_v_nivel', 3)
@@ -418,14 +396,11 @@ with tab_principal:
             st.session_state.temp_v_gol = False
 
     st.markdown("### 1️⃣ Presença")
-    st.caption("Adicione o Visitante e defina o Nível Técnico (1=Básico, 3=Médio, 5=Craque):")
-    
     col_v1, col_v2, col_v3, col_v4 = st.columns([4, 2, 2, 3])
     with col_v1: st.text_input("Visitante", key="temp_v_nome", placeholder="Ex: Jonas", label_visibility="collapsed")
     with col_v2: st.selectbox("Nível", [1, 2, 3, 4, 5], index=2, key="temp_v_nivel", label_visibility="collapsed")
     with col_v3: st.checkbox("🧤Goleiro?", key="temp_v_gol")
-    with col_v4:
-        st.button("➕Inserir", use_container_width=True, on_click=inserir_visitante_callback)
+    with col_v4: st.button("➕Inserir", use_container_width=True, on_click=inserir_visitante_callback)
 
     opcoes_totais = list(dict.fromkeys(jogadores_base + goleiros_base + st.session_state.visitantes_list))
     
@@ -499,10 +474,8 @@ with tab_principal:
         if st.button("💾 INICIAR PARTIDA OFICIAL", use_container_width=True):
             with st.spinner("Registrando partida na nuvem e sincronizando..."):
                 salvar_partida_pendente(st.session_state.res_time_a, st.session_state.res_time_b)
-                
                 import time
                 time.sleep(2.0)
-                
                 obter_partida_pendente.clear()
                 
                 chaves_para_limpar = [
