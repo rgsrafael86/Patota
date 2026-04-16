@@ -49,22 +49,21 @@ def obter_partida_pendente():
             data_rows = rows[1:]
             # Olhamos apenas os últimos registros (o mais provável de estar pendente)
             for i, r_values in enumerate(data_rows):
-                # Cria dict mapeando header -> valor
-                r = dict(zip(headers, r_values))
-                if str(r.get("Status")).strip().lower() == "pendente":
+                # Usar índices fixos é mais seguro contra mudanças de nomes nas colunas
+                # 0: ID, 1: Data, 2: Time A, 3: Time B, 4: Status
+                if len(r_values) > 4 and str(r_values[4]).strip().lower() == "pendente":
                     import ast
                     try:
-                        # ast.literal_eval é muito mais seguro para converter str([{...}]) de volta para lista
-                        ta = ast.literal_eval(str(r.get("Time_Azul", "[]")))
-                        tb = ast.literal_eval(str(r.get("Time_Roxo", "[]")))
+                        ta = ast.literal_eval(str(r_values[2]))
+                        tb = ast.literal_eval(str(r_values[3]))
                     except:
                         ta, tb = [], []
                         
                     return {
-                        "id": r.get("ID_Partida"),
+                        "id": r_values[0],
                         "time_a": ta,
                         "time_b": tb,
-                        "data": r.get("Data_Hora"),
+                        "data": r_values[1],
                         "row_index": i + 2 
                     }
             return None
