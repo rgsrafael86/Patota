@@ -52,10 +52,18 @@ def obter_partida_pendente():
                 # Cria dict mapeando header -> valor
                 r = dict(zip(headers, r_values))
                 if str(r.get("Status")).strip().lower() == "pendente":
+                    import ast
+                    try:
+                        # ast.literal_eval é muito mais seguro para converter str([{...}]) de volta para lista
+                        ta = ast.literal_eval(str(r.get("Time_Azul", "[]")))
+                        tb = ast.literal_eval(str(r.get("Time_Roxo", "[]")))
+                    except:
+                        ta, tb = [], []
+                        
                     return {
                         "id": r.get("ID_Partida"),
-                        "time_a": json.loads(str(r.get("Time_Azul")).replace("'", '"')),
-                        "time_b": json.loads(str(r.get("Time_Roxo")).replace("'", '"')),
+                        "time_a": ta,
+                        "time_b": tb,
                         "data": r.get("Data_Hora"),
                         "row_index": i + 2 
                     }
