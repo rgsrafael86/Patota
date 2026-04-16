@@ -34,21 +34,38 @@ def salvar_partida_pendente(time_a, time_b):
     ws.append_row(row)
     return partida_id
 
-@st.cache_data(ttl=10)
+@st.cache_data(ttl=60)
 def obter_partida_pendente():
-    sh = get_gspread_client()
-    ws = sh.worksheet("Historico_Partidas")
-    records = ws.get_all_records()
-    if not records: return None
-    last = records[-1]
-    if str(last.get("Status")).strip().lower() == "pendente":
-        return {
-            "id": last.get("ID_Partida"),
-            "time_a": json.loads(last.get("Time_Azul")),
-            "time_b": json.loads(last.get("Time_Roxo")),
-            "data": last.get("Data_Hora"),
-            "row_index": len(records) + 1 
-        }
+    import time
+    for tentativa in range(2):
+        try:
+            sh = get_gspread_client()
+            ws = sh.worksheet("Historico_Partidas")
+            # Otimização extrema: Busca apenas as últimas 20 linhas para economizar cota
+            rows = ws.get_all_values()
+            if len(rows) <= 1: return None
+            
+            headers = rows[0]
+            data_rows = rows[1:]
+            # Olhamos apenas os últimos registros (o mais provável de estar pendente)
+            for i, r_values in enumerate(data_rows):
+                # Cria dict mapeando header -> valor
+                r = dict(zip(headers, r_values))
+                if str(r.get("Status")).strip().lower() == "pendente":
+                    return {
+                        "id": r.get("ID_Partida"),
+                        "time_a": json.loads(str(r.get("Time_Azul")).replace("'", '"')),
+                        "time_b": json.loads(str(r.get("Time_Roxo")).replace("'", '"')),
+                        "data": r.get("Data_Hora"),
+                        "row_index": i + 2 
+                    }
+            return None
+        except Exception as e:
+            if tentativa == 0:
+                time.sleep(2) # Espera o Google "respirar"
+                st.cache_data.clear() # Limpa cache para forçar nova tentativa
+            else:
+                raise e
     return None
 
 def ler_auditoria_cloud():
