@@ -398,25 +398,21 @@ with tab_principal:
         
         msg_safe = msg.replace('`', "'").replace('\n', '\\n')
         
-        if not st.session_state.match_saved:
-            if st.button("💾 SALVAR E GERAR WHATSAPP", use_container_width=True):
-                with st.spinner("Registrando partida na nuvem..."):
-                    salvar_partida_pendente(st.session_state.res_time_a, st.session_state.res_time_b)
-                    st.session_state.match_saved = True
-                    st.rerun()
-        else:
-            st.success("✅ Partida Registrada! Copie o resumo abaixo:")
-            components.html(f"""
-                <button onclick="navigator.clipboard.writeText(`{msg_safe}`).then(() => {{ this.innerText = '✅ Copiado com Sucesso!'; this.style.backgroundColor = '#128C7E'; }})" 
-                style="width: 100%; padding: 15px; background-color: #25D366; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; box-shadow: 0px 4px 6px rgba(0,0,0,0.2);">
-                    📋 COPIAR PARA WHATSAPP
-                </button>
-            """, height=65)
-            
-            if st.button("🔄 CONCLUIR E LIMPAR TELA", use_container_width=True):
-                chaves = ['res_time_a', 'res_time_b', 'res_gap', 'keys_presentes', 'match_saved']
-                for c in chaves:
-                    if c in st.session_state: del st.session_state[c]
+        # BOTÃO DE CÓPIA (SEMPRE DISPONÍVEL APÓS O SORTEIO)
+        components.html(f"""
+            <button onclick="navigator.clipboard.writeText(`{msg_safe}`).then(() => {{ this.innerText = '✅ Copiado com Sucesso!'; this.style.backgroundColor = '#128C7E'; }})" 
+            style="width: 100%; padding: 15px; background-color: #25D366; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; box-shadow: 0px 4px 6px rgba(0,0,0,0.2);">
+                📋 COPIAR PARA WHATSAPP
+            </button>
+        """, height=65)
+
+        st.warning("⚠️ **IMPORTANTE:** Após copiar, não esqueça de clicar no botão abaixo para registrar a partida no sistema!")
+        
+        if st.button("💾 INICIAR PARTIDA OFICIAL", use_container_width=True):
+            with st.spinner("Registrando partida na nuvem..."):
+                salvar_partida_pendente(st.session_state.res_time_a, st.session_state.res_time_b)
+                # Limpa apenas os resultados para forçar a tela de placar
+                if 'res_time_a' in st.session_state: del st.session_state['res_time_a']
                 st.rerun()
 
 # --- RODAPÉ DISCRETO ---
