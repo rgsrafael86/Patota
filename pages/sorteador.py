@@ -307,6 +307,7 @@ with tab_principal:
     if 'keys_presentes' not in st.session_state: st.session_state.keys_presentes = []
     if 'visitantes_ratings' not in st.session_state: st.session_state.visitantes_ratings = {}
     if 'sorteio_count' not in st.session_state: st.session_state.sorteio_count = 0
+    if 'match_saved' not in st.session_state: st.session_state.match_saved = False
 
     def inserir_visitante_callback():
         nome = st.session_state.get('temp_v_nome', '').strip()
@@ -396,25 +397,28 @@ with tab_principal:
         msg += "\n\n🔗 *Preencher Resultado:* Acesse o atalho Patota Ajax Portal · Streamlit (https://patota.streamlit.app/)"
         
         msg_safe = msg.replace('`', "'").replace('\n', '\\n')
-        components.html(f"""
-            <button onclick="navigator.clipboard.writeText(`{msg_safe}`).then(() => {{ this.innerText = '✅ Copiado com Sucesso!'; this.style.backgroundColor = '#128C7E'; }})" 
-            style="width: 100%; padding: 15px; background-color: #25D366; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; box-shadow: 0px 4px 6px rgba(0,0,0,0.2);">
-                📋 COPIAR RESUMO PARA WHATSAPP
-            </button>
-        """, height=65)
-
-        if st.button("💾 INICIAR PARTIDA OFICIAL", use_container_width=True):
-            salvar_partida_pendente(st.session_state.res_time_a, st.session_state.res_time_b)
+        
+        if not st.session_state.match_saved:
+            if st.button("💾 INICIAR PARTIDA OFICIAL", use_container_width=True):
+                with st.spinner("Salvando partida..."):
+                    salvar_partida_pendente(st.session_state.res_time_a, st.session_state.res_time_b)
+                    st.session_state.match_saved = True
+                    st.rerun()
+        else:
+            st.success("✅ Partida Registrada no Sistema! Agora copie para o grupo:")
+            components.html(f"""
+                <button onclick="navigator.clipboard.writeText(`{msg_safe}`).then(() => {{ this.innerText = '✅ Copiado com Sucesso!'; this.style.backgroundColor = '#128C7E'; }})" 
+                style="width: 100%; padding: 15px; background-color: #25D366; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; box-shadow: 0px 4px 6px rgba(0,0,0,0.2);">
+                    📋 COPIAR PARA WHATSAPP
+                </button>
+            """, height=65)
             
-            # Limpeza segura (Evita StreamlitAPIException)
-            chaves_para_limpar = ['res_time_a', 'res_time_b', 'res_gap', 'keys_presentes', 'keys_goleiros']
-            for chave in chaves_para_limpar:
-                if chave in st.session_state:
-                    try: del st.session_state[chave]
-                    except: pass
-            
-            st.session_state.sorteio_count = 0
-            st.rerun()
+            if st.button("🔄 NOVO SORTEIO (LIMPAR TELA)", use_container_width=True):
+                # Limpeza completa
+                chaves = ['res_time_a', 'res_time_b', 'res_gap', 'keys_presentes', 'match_saved']
+                for c in chaves:
+                    if c in st.session_state: del st.session_state[c]
+                st.rerun()
 
 # --- RODAPÉ DISCRETO ---
 st.markdown("---")
