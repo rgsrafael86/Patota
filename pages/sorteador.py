@@ -54,7 +54,6 @@ def salvar_partida_pendente(time_a, time_b):
 @st.cache_data(ttl=60)
 def obter_partida_pendente():
     import time
-    # POKA-YOKE: Retry Pattern mais resiliente. Tenta 3 vezes antes de acusar erro.
     for tentativa in range(3):
         try:
             sh = get_gspread_client()
@@ -64,13 +63,19 @@ def obter_partida_pendente():
             
             for i, r in enumerate(reversed(records)):
                 if str(r.get("Status")).strip().lower() == "pendente":
-                    import ast
                     try:
                         t_azul_raw = str(r.get("Time_Azul", r.get("Time_A", "[]")))
                         t_roxo_raw = str(r.get("Time_Roxo", r.get("Time_B", "[]")))
-                        ta = ast.literal_eval(t_azul_raw)
-                        tb = ast.literal_eval(t_roxo_raw)
-                    except:
+                        
+                        # POKA-YOKE DA CAUSA-RAIZ: 
+                        # Força o dado a ser um JSON estrito para evitar falha com 'false' vs 'False'
+                        t_azul_raw = t_azul_raw.replace("'", '"').replace("False", "false").replace("True", "true")
+                        t_roxo_raw = t_roxo_raw.replace("'", '"').replace("False", "false").replace("True", "true")
+                        
+                        ta = json.loads(t_azul_raw)
+                        tb = json.loads(t_roxo_raw)
+                    except Exception as e:
+                        print(f"Erro no parser JSON: {e}")
                         ta, tb = [], []
                         
                     return {
@@ -83,7 +88,7 @@ def obter_partida_pendente():
             return None
         except Exception as e:
             if tentativa < 2:
-                time.sleep(2) # Pausa para desafogar a API do Google, SEM apagar o cache.
+                time.sleep(2)
             else:
                 raise e
     return None
@@ -153,7 +158,7 @@ def finalizar_partida(row_index, gols_a, gols_b, time_a, time_b):
     # 1. Update do Histórico
     ws_hist.update(range_name=f"E{row_index}:G{row_index}", values=[["Finalizada", gols_a, gols_b]])
     
-    # POKA-YOKE CONTRA RATE LIMIT (429 Error): Dá um respiro para a API do Google entre requisições.
+    # POKA-YOKE CONTRA RATE LIMIT
     time.sleep(1.5)
     
     try:
@@ -192,6 +197,7 @@ def finalizar_partida(row_index, gols_a, gols_b, time_a, time_b):
         elif res == 0: stats["Derrotas"] = int(stats["Derrotas"]) + 1
         ranking_db[nome_clean] = stats
         
+    # Processa os jogadores usando a decodificação correta que recebemos das listas
     for p in time_a: calc_novo_elo(p, media_b, res_a)
     for p in time_b: calc_novo_elo(p, media_a, res_b)
     
@@ -200,9 +206,6 @@ def finalizar_partida(row_index, gols_a, gols_b, time_a, time_b):
     for _, s in sorted(ranking_db.items(), key=lambda x: float(x[1]['Rating']), reverse=True):
         linhas.append([s["Nome"], s["Posicao"], s["Rating"], s["Jogos"], s["Vitorias"], s["Derrotas"]])
     
-    # OTIMIZAÇÃO (Corte de 50% nas requisições): 
-    # Removido o ws_rank.clear(). Como a lista de ranking nunca diminui, sobrescrever 
-    # a partir do A1 é suficiente e poupa 1 chamada de API pesada, evitando erros de servidor.
     time.sleep(1.0)
     ws_rank.update(values=linhas, range_name="A1")
 
