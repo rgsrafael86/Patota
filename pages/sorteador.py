@@ -44,12 +44,10 @@ def obter_partida_pendente():
             records = ws.get_all_records()
             if not records: return None
             
-            # Procuramos de trás para frente (o último é o mais provável)
             for i, r in enumerate(reversed(records)):
                 if str(r.get("Status")).strip().lower() == "pendente":
                     import ast
                     try:
-                        # Tenta carregar como lista de dicts (JSON ou Literais Python)
                         t_azul_raw = str(r.get("Time_Azul", r.get("Time_A", "[]")))
                         t_roxo_raw = str(r.get("Time_Roxo", r.get("Time_B", "[]")))
                         ta = ast.literal_eval(t_azul_raw)
@@ -82,7 +80,6 @@ def ler_auditoria_cloud():
         return []
 
 def obter_contagem_audit_hoje():
-    """Consulta a nuvem para saber quantos sorteios reais já foram feitos hoje."""
     try:
         registros = ler_auditoria_cloud()
         if not registros: return 0, None
@@ -90,7 +87,6 @@ def obter_contagem_audit_hoje():
         hoje_obj = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=-3)))
         hoje_str = hoje_obj.strftime("%d/%m/%Y")
         
-        # Filtra registros de hoje com mais resiliência (ignora zeros à esquerda se necessário e limpa espaços)
         regs_hoje = []
         for r in registros:
             dt_str = str(r.get("Data_Hora", "")).strip()
@@ -99,7 +95,6 @@ def obter_contagem_audit_hoje():
         
         if not regs_hoje: return 0, None
         
-        # Retorna o total de hoje e o horário do ANTERIOR para o V.A.R. (se houver mais de 1)
         if len(regs_hoje) > 1:
             ultimo_horario = regs_hoje[-2].get("Data_Hora", "").split(" ")[1]
         else:
@@ -131,16 +126,16 @@ def finalizar_partida(row_index, gols_a, gols_b, time_a, time_b):
     sh = get_gspread_client()
     ws_hist = sh.worksheet("Historico_Partidas")
     
-    # Otimização: Atualiza placar e status em uma única chamada de intervalo (Batch)
-    # Colunas E, F, G são Status, Gols_Azul, Gols_Roxo (Confirmar se são 5,6,7)
-    ws_hist.update(range_name=f"E{row_index}:G{row_index}", values=[["Finalizada", gols_a, gols_b]])
+    # Correção do Gargalo 3: Uso de update_cell iterativo (Robusto, sem erros de sintaxe de API)
+    ws_hist.update_cell(row_index, 5, "Finalizada")
+    ws_hist.update_cell(row_index, 6, gols_a)
+    ws_hist.update_cell(row_index, 7, gols_b)
     
     try:
         ws_rank = sh.worksheet("Ranking_IA")
         records = ws_rank.get_all_records()
         ranking_db = {str(r['Nome']): r for r in records}
     except Exception as e:
-        # Se falhar ao ler (ex: aba vazia ou erro de API), gera ranking vazio seguro
         st.warning(f"⚠️ Nota: Não foi possível ler o Ranking IA agora. Usando base de 1000 pts. Erro: {str(e)}")
         ranking_db = {}
     
@@ -192,7 +187,6 @@ def obter_base_de_jogadores():
         records = ws_base.get_all_records()
         for r in records:
             nome, cat, status = str(r.get("Nome", "")).strip(), str(r.get("Categoria", "")).strip(), str(r.get("Status", "")).strip()
-            # Poka-Yoke: Pula quem está inativo, é fornecedor ou está no Departamento Médico (DM)
             if not nome or cat.lower() in ["fornecedor", "dm"] or status.lower() in ["inativo", "dm"]: 
                 continue
                 
@@ -217,7 +211,6 @@ class MatchEngine:
         elif len(goalkeepers_list) == 1:
             gk_a.append(goalkeepers_list[0]) 
 
-        # --- FATOR CAOS: Adiciona uma leve variação (±5%) para evitar times repetidos ---
         players_calc = []
         for p in players_list:
             p_copy = p.copy()
@@ -238,10 +231,8 @@ class MatchEngine:
         best_diff, best_combination = float('inf'), None
         all_combinations = list(combinations(range(len(players_calc)), max(0, needed_a)))
         
-        # Embaralha as combinações para que o "amostragem" seja randômica
         random.shuffle(all_combinations)
         
-        # Limite de processamento para não travar o app
         if len(all_combinations) > 1000:
             all_combinations = all_combinations[:1000]
 
@@ -264,21 +255,20 @@ class MatchEngine:
 # --- INTERFACE ---
 st.title("🧠 Sorteador Ajax")
 
-# --- ISOLAMENTO CSS ESTRITO: Força Caixa Escura e Texto Branco ---
 st.markdown("""
     <style>
     div[data-testid="stTextInput"] div[data-baseweb="input"],
     div[data-testid="stNumberInput"] div[data-baseweb="input"] {
-        background-color: #1e1e1e !important; /* Força fundo escuro */
+        background-color: #1e1e1e !important;
         border-radius: 6px !important;
         border: 1px solid #444444 !important;
     }
     
     div[data-testid="stTextInput"] input,
     div[data-testid="stNumberInput"] input {
-        color: #ffffff !important; /* Força texto branco */
+        color: #ffffff !important;
         -webkit-text-fill-color: #ffffff !important;
-        caret-color: #ffffff !important; /* Força cursor branco */
+        caret-color: #ffffff !important;
     }
     
     div[data-testid="stTextInput"] input::placeholder {
@@ -314,19 +304,20 @@ with tab_principal:
         if st.button("🏆 Finalizar Partida", use_container_width=True):
             with st.spinner("Computando resultados..."):
                 finalizar_partida(pendente["row_index"], gols_a, gols_b, pendente["time_a"], pendente["time_b"])
-                # Força a limpeza do cache para reconhecer que não há mais pendências
-                st.cache_data.clear()
-                st.success("ELO Recalculado!")
-                # Limpa a tela para o próximo sorteio
-                chaves = ['res_time_a', 'res_time_b', 'res_gap', 'keys_presentes', 'match_saved']
-                for c in chaves:
-                    if c in st.session_state: del st.session_state[c]
+                
+                # Correção do Gargalo 2: Limpeza absoluta de cache e estado (Hard Reset)
+                obter_partida_pendente.clear()
+                obter_ratings_atuais.clear()
+                st.session_state.clear()
+                
+                st.success("ELO Recalculado! Retornando ao sorteador vazio...")
+                import time
+                time.sleep(1)
                 st.rerun()
         st.stop()
 
     jogadores_base, goleiros_base = obter_base_de_jogadores()
     
-    # POKA-YOKE: LIMPEZA DE CACHE "SUJO" DA SESSÃO ANTERIOR
     if 'visitantes_goleiros' in st.session_state and not isinstance(st.session_state.visitantes_goleiros, list):
         st.session_state.visitantes_goleiros = []
     if 'visitantes_list' in st.session_state and not isinstance(st.session_state.visitantes_list, list):
@@ -334,7 +325,6 @@ with tab_principal:
     if 'keys_presentes' in st.session_state and not isinstance(st.session_state.keys_presentes, list):
         st.session_state.keys_presentes = []
         
-    # INICIALIZAÇÃO SEGURA DO ESTADO DA SESSÃO
     if 'visitantes_list' not in st.session_state: st.session_state.visitantes_list = []
     if 'visitantes_goleiros' not in st.session_state: st.session_state.visitantes_goleiros = []
     if 'keys_presentes' not in st.session_state: st.session_state.keys_presentes = []
@@ -355,7 +345,6 @@ with tab_principal:
             if goleiro: 
                 st.session_state.visitantes_goleiros.append(nome)
             
-            # LIMPEZA SEGURA NO CALLBACK
             st.session_state.temp_v_nome = ""
             st.session_state.temp_v_gol = False
 
@@ -390,7 +379,6 @@ with tab_principal:
                 mock_l = [{"nome": p, "rating": ratings.get(p, 1000), "goleiro": False} for p in presentes if p not in goleiros_sel]
                 mock_g = [{"nome": g, "rating": ratings.get(g, 1000), "goleiro": True} for g in goleiros_sel]
                 ta, tb, gap = MatchEngine.balance_teams(mock_l, mock_g)
-                # CHAMA AUDITORIA GLOBAL NA NUVEM
                 num_global = registrar_auditoria_cloud(gap, ta, tb)
                 st.session_state.res_time_a, st.session_state.res_time_b, st.session_state.res_gap = ta, tb, gap
                 st.session_state.num_sorteio_atual = num_global
@@ -402,11 +390,10 @@ with tab_principal:
         for idx, (col, time, cor, label) in enumerate(zip([c1, c2], [st.session_state.res_time_a, st.session_state.res_time_b], ["#00d4ff", "#8a2be2"], ["AZUL", "ROXO"])):
             with col:
                 st.markdown(f"<h3 style='color: {cor}; text-align: center; border-bottom: 2px solid {cor};'>{label}</h3>", unsafe_allow_html=True)
-                for j in time: st.write(f"**{'🧤' if j.get('goleiro') else '🏃'} {j['nome']}** \n`ELO: {j['rating']}`")
+                for j in time: st.write(f"**{'🧤' if j.get('goleiro') else '🏃'} {j['nome']}** \n`ELO: {j['rating']:.0f}`")
         st.markdown("---")
         st.info(f"⚖️ Diferença Matemática: {st.session_state.res_gap:.1f} pontos.")
         
-        # --- ALERTA VISUAL DE AUDITORIA ---
         total_hoje, ultimo_hora = obter_contagem_audit_hoje()
         if total_hoje > 1:
             st.error(f"🚨 **V.A.R. Cloud Ativado:** Este é o **{total_hoje}º sorteio** registrado hoje.\n\nO sorteio anterior foi realizado às `{ultimo_hora}`.")
@@ -419,7 +406,6 @@ with tab_principal:
         for j in st.session_state.res_time_b: msg += f"{'🧤' if j.get('goleiro') else '🏃'} {j['nome']}\n"
         msg += f"\n⚖️ *Desnível entre os times:* Apenas {st.session_state.res_gap:.1f} pontos de diferença na soma geral."
         
-        # --- AUDITORIA NO WHATSAPP ---
         total_hoje, ultimo_hora = obter_contagem_audit_hoje()
         if total_hoje > 1:
             msg += f"\n\n🚨 *V.A.R. Cloud:* Sorteio nº {total_hoje} registrado hoje."
@@ -431,7 +417,6 @@ with tab_principal:
         
         msg_safe = msg.replace('`', "'").replace('\n', '\\n')
         
-        # BOTÃO DE CÓPIA (SEMPRE DISPONÍVEL APÓS O SORTEIO)
         components.html(f"""
             <button onclick="navigator.clipboard.writeText(`{msg_safe}`).then(() => {{ this.innerText = '✅ Copiado com Sucesso!'; this.style.backgroundColor = '#128C7E'; }})" 
             style="width: 100%; padding: 15px; background-color: #25D366; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; box-shadow: 0px 4px 6px rgba(0,0,0,0.2);">
@@ -444,7 +429,10 @@ with tab_principal:
         if st.button("💾 INICIAR PARTIDA OFICIAL", use_container_width=True):
             with st.spinner("Registrando partida na nuvem..."):
                 salvar_partida_pendente(st.session_state.res_time_a, st.session_state.res_time_b)
-                # Limpa apenas os resultados para forçar a tela de placar
+                
+                # Correção do Gargalo 1: Limpar o cache do status pendente antes de avançar
+                obter_partida_pendente.clear()
+                
                 if 'res_time_a' in st.session_state: del st.session_state['res_time_a']
                 st.rerun()
 
