@@ -315,13 +315,22 @@ with tab_principal:
                 finalizar_partida(pendente["row_index"], gols_a, gols_b, pendente["time_a"], pendente["time_b"])
                 
                 # Força a limpeza do cache para reconhecer que não há mais pendências
-                st.cache_data.clear()
+                obter_partida_pendente.clear()
                 
                 st.success("ELO Recalculado! Retornando ao sorteador vazio...")
                 
-                # Limpa a tela para o próximo sorteio garantindo que os arrays estejam vazios
-                chaves = ['res_time_a', 'res_time_b', 'res_gap', 'keys_presentes', 'match_saved']
-                for c in chaves:
+                # Limpeza segura: Deleta as chaves em vez de atribuir listas vazias (Evita StreamlitAPIException)
+                chaves_para_limpar = [
+                    'res_time_a', 
+                    'res_time_b', 
+                    'res_gap', 
+                    'keys_presentes', 
+                    'visitantes_list', 
+                    'visitantes_goleiros', 
+                    'visitantes_ratings',
+                    'match_saved'
+                ]
+                for c in chaves_para_limpar:
                     if c in st.session_state: 
                         del st.session_state[c]
                 
@@ -334,11 +343,11 @@ with tab_principal:
     
     # POKA-YOKE: LIMPEZA DE CACHE "SUJO" DA SESSÃO ANTERIOR
     if 'visitantes_goleiros' in st.session_state and not isinstance(st.session_state.visitantes_goleiros, list):
-        st.session_state.visitantes_goleiros = []
+        del st.session_state['visitantes_goleiros']
     if 'visitantes_list' in st.session_state and not isinstance(st.session_state.visitantes_list, list):
-        st.session_state.visitantes_list = []
+        del st.session_state['visitantes_list']
     if 'keys_presentes' in st.session_state and not isinstance(st.session_state.keys_presentes, list):
-        st.session_state.keys_presentes = []
+        del st.session_state['keys_presentes']
         
     # INICIALIZAÇÃO SEGURA DO ESTADO DA SESSÃO
     if 'visitantes_list' not in st.session_state: st.session_state.visitantes_list = []
@@ -428,47 +437,4 @@ with tab_principal:
         # --- AUDITORIA NO WHATSAPP ---
         total_hoje, ultimo_hora = obter_contagem_audit_hoje()
         if total_hoje > 1:
-            msg += f"\n\n🚨 *V.A.R. Cloud:* Sorteio nº {total_hoje} registrado hoje."
-            msg += f"\n⚠️ *ALERTA:* Houve um sorteio anterior às {ultimo_hora}."
-        else:
-            msg += f"\n\n✅ *V.A.R. Cloud:* Sorteio nº 1 (Oficial)"
-        
-        msg += "\n\n🔗 *Preencher Resultado:* Acesse o atalho Patota Ajax Portal · Streamlit (https://patota.streamlit.app/)"
-        
-        msg_safe = msg.replace('`', "'").replace('\n', '\\n')
-        
-        # BOTÃO DE CÓPIA (SEMPRE DISPONÍVEL APÓS O SORTEIO)
-        components.html(f"""
-            <button onclick="navigator.clipboard.writeText(`{msg_safe}`).then(() => {{ this.innerText = '✅ Copiado com Sucesso!'; this.style.backgroundColor = '#128C7E'; }})" 
-            style="width: 100%; padding: 15px; background-color: #25D366; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; box-shadow: 0px 4px 6px rgba(0,0,0,0.2);">
-                📋 COPIAR PARA WHATSAPP
-            </button>
-        """, height=65)
-
-        st.warning("⚠️ **IMPORTANTE:** Após copiar, não esqueça de clicar no botão abaixo para registrar a partida no sistema!")
-        
-        if st.button("💾 INICIAR PARTIDA OFICIAL", use_container_width=True):
-            with st.spinner("Registrando partida na nuvem e sincronizando..."):
-                salvar_partida_pendente(st.session_state.res_time_a, st.session_state.res_time_b)
-                
-                # 1. POKA-YOKE: Aguarda a API do Google Sheets indexar a nova linha (Race Condition Fix)
-                import time
-                time.sleep(2.0)
-                
-                # 2. Força a limpeza do cache de leitura
-                obter_partida_pendente.clear()
-                
-                # 3. POKA-YOKE: Hard Reset da UI (Limpa os jogadores selecionados para o próximo sorteio)
-                st.session_state.keys_presentes = []
-                st.session_state.visitantes_list = []
-                st.session_state.visitantes_goleiros = []
-                st.session_state.visitantes_ratings = {}
-                if 'res_time_a' in st.session_state: del st.session_state['res_time_a']
-                if 'res_time_b' in st.session_state: del st.session_state['res_time_b']
-                if 'res_gap' in st.session_state: del st.session_state['res_gap']
-                
-                st.rerun()
-
-# --- RODAPÉ DISCRETO ---
-st.markdown("---")
-st.caption("Suporte: Rafael Guimarães")
+            msg += f"\n\n🚨 *V.A.R. Cloud
