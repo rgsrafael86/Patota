@@ -11,12 +11,14 @@ import streamlit.components.v1 as components
 
 # ==============================================================================
 # MÓDULO 0: UTILITÁRIOS E NORMALIZAÇÃO DE DADOS (POKA-YOKE)
+# Objetivo: Evitar corrompimento de banco de dados por erros de digitação.
 # ==============================================================================
 
 def padronizar_nome(nome):
     """
     Normaliza a string para atuar como Chave Primária segura no Banco de Dados.
     Remove acentos, espaços extras e converte para Maiúsculo.
+    Exemplo: " Maurício " -> "MAURICIO"
     """
     if not nome: return ""
     nome = str(nome).strip().upper()
@@ -25,10 +27,15 @@ def padronizar_nome(nome):
 
 # ==============================================================================
 # MÓDULO 1: COMUNICAÇÃO COM BANCO DE DADOS (GOOGLE SHEETS)
+# Objetivo: Gerenciar a persistência de dados na nuvem via API.
 # ==============================================================================
 
 @st.cache_resource
 def get_gspread_client():
+    """
+    Estabelece a conexão com o Google Sheets usando credenciais seguras.
+    O @st.cache_resource garante que o login seja feito apenas 1x por inicialização do app.
+    """
     SHEET_ID = "1EJ-iSyYVbdafgAWawAQL2Kc-092OVfKtNvqbZg3eWfs"
     if "gcp_service_account" in st.secrets:
         from google.oauth2.service_account import Credentials
@@ -42,9 +49,10 @@ def get_gspread_client():
     return gc.open_by_key(SHEET_ID)
 
 def salvar_partida_pendente(time_a, time_b):
+    """ Grava os times sorteados na planilha para aguardar o preenchimento do placar final. """
     sh = get_gspread_client()
     ws = sh.worksheet("Historico_Partidas")
-    partida_id = str(uuid.uuid4())[:8]
+    partida_id = str(uuid.uuid4())[:8] # Gera um ID único curto
     agora = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=-3))).strftime("%d/%m/%Y %H:%M:%S")
     t_a_clean = [{"nome": padronizar_nome(p["nome"]), "goleiro": p["goleiro"], "rating": p["rating"]} for p in time_a]
     t_b_clean = [{"nome": padronizar_nome(p["nome"]), "goleiro": p["goleiro"], "rating": p["rating"]} for p in time_b]
@@ -52,9 +60,10 @@ def salvar_partida_pendente(time_a, time_b):
     ws.append_row(row)
     return partida_id
 
-# Proteção de Leitura (Cache de 60s) para evitar Erro 429
+# Proteção de Leitura (Cache de 60s) para evitar Erro 429 (Limite de API do Google)
 @st.cache_data(ttl=60)
 def obter_partida_pendente():
+    """ Varre o histórico de trás para frente buscando um jogo com status 'Pendente'. """
     import time
     for tentativa in range(3):
         try:
@@ -88,13 +97,14 @@ def obter_partida_pendente():
             return None
         except Exception as e:
             if tentativa < 2:
-                time.sleep(2)
+                time.sleep(2) # Recuo Exponencial (Espera antes de tentar de novo)
             else:
                 raise e
     return None
 
 # ==============================================================================
 # MÓDULO 2: AUDITORIA E V.A.R.
+# Objetivo: Garantir transparência nos sorteios e inibir manipulação ("sorteia de novo").
 # ==============================================================================
 
 @st.cache_data(ttl=60)
@@ -107,6 +117,7 @@ def ler_auditoria_cloud():
         return []
 
 def obter_contagem_audit_hoje():
+    """ Verifica quantos sorteios foram feitos no dia atual para acionar o alerta do V.A.R. """
     try:
         registros = ler_auditoria_cloud()
         if not registros: return 0, None
@@ -142,7 +153,7 @@ def registrar_auditoria_cloud(gap, time_a, time_b):
         rx = ", ".join([padronizar_nome(p["nome"]) for p in time_b])
         status = "Autêntico" if sorteio_num == 1 else "Suspeito"
         ws.append_row([agora, sorteio_num, status, gap, az, rx])
-        ler_auditoria_cloud.clear() # Limpa cache do VAR para atualização instantânea
+        ler_auditoria_cloud.clear() # Limpa cache do VAR para atualização instantânea na tela
         return sorteio_num
     except:
         return 1
@@ -156,15 +167,17 @@ def finalizar_partida(row_index, gols_a, gols_b, time_a, time_b):
     sh = get_gspread_client()
     
     try:
-        # Transação Atômica: Se o banco estiver travado, quebra aqui sem apagar nada
+        # Transação Atômica: Se o banco estiver travado, o app cai no 'except' sem apagar nada
         ws_rank = sh.worksheet("Ranking_IA")
         records = ws_rank.get_all_records()
         ranking_db = {padronizar_nome(r['Nome']): r for r in records}
         
+        # Atualiza a linha da partida de Pendente para Finalizada
         ws_hist = sh.worksheet("Historico_Partidas")
         ws_hist.update(range_name=f"E{row_index}:G{row_index}", values=[["Finalizada", gols_a, gols_b]])
-        time.sleep(1.0) # Respiro para a API
+        time.sleep(1.0) # Respiro para a API do Google não bloquear
         
+        # Lógica ELO de Intensidade de Gols (K-Factor Dinâmico)
         diff = abs(gols_a - gols_b)
         k_factor = 32 if diff < 3 else (48 if diff < 5 else 64)
         res_a = 1 if gols_a > gols_b else (0.5 if gols_a == gols_b else 0)
@@ -185,7 +198,7 @@ def finalizar_partida(row_index, gols_a, gols_b, time_a, time_b):
             })
             
             elo_atual = float(stats["Rating"])
-            exp = 1 / (1 + 10 ** ((media_adv - elo_atual) / 400))
+            exp = 1 / (1 + 10 ** ((media_adv - elo_atual) / 400)) # Curva de Probabilidade ELO
             
             stats["Rating"] = round(elo_atual + k_factor * (res - exp))
             stats["Jogos"] = int(stats["Jogos"]) + 1
@@ -196,6 +209,7 @@ def finalizar_partida(row_index, gols_a, gols_b, time_a, time_b):
         for p in time_a: calc_novo_elo(p, media_b, res_a)
         for p in time_b: calc_novo_elo(p, media_a, res_b)
         
+        # Monta a nova tabela ordenada para injetar no Google Sheets
         headers = ["Nome", "Posicao", "Rating", "Jogos", "Vitorias", "Derrotas"]
         linhas = [headers]
         for _, s in sorted(ranking_db.items(), key=lambda x: float(x[1]['Rating']), reverse=True):
@@ -209,7 +223,6 @@ def finalizar_partida(row_index, gols_a, gols_b, time_a, time_b):
         st.error("🚨 O Google bloqueou a operação por limite temporário de rede. Seus dados estão seguros. Aguarde 60 segundos e tente novamente.")
         st.stop()
 
-# FUNÇÕES REINJETADAS PARA CORRIGIR O NAME-ERROR E GARANTIR O CACHE
 @st.cache_data(ttl=60)
 def obter_ratings_atuais():
     try:
@@ -241,22 +254,26 @@ def obter_base_de_jogadores():
     return jog_linha, gols
 
 # ==============================================================================
-# MÓDULO 4: MOTOR DE ELO MATEMÁTICO
+# MÓDULO 4: MOTOR DE EQUILÍBRIO (OTIMIZADO PARA FORÇA EFETIVA)
+# Objetivo: Balancear assimetrias (Ex: 13 pessoas) nivelando pelo fluxo em quadra (5 vs 5).
 # ==============================================================================
 
 class MatchEngine:
     @staticmethod
     def balance_teams(players_list, goalkeepers_list):
         gk_a, gk_b = [], []
+        # Distribuição Primária de Goleiros
         if len(goalkeepers_list) >= 2:
             gk_a.append(goalkeepers_list[0])
             gk_b.append(goalkeepers_list[1])
+            # Se houver 3º goleiro, ele vai para a linha
             for extra_gk in goalkeepers_list[2:]:
                 extra_gk["goleiro"] = False
                 players_list.append(extra_gk)
         elif len(goalkeepers_list) == 1:
             gk_a.append(goalkeepers_list[0]) 
 
+        # Aplicação do "Fator Caos" (Variação de 5% no Rating do dia)
         players_calc = []
         for p in players_list:
             p_copy = p.copy()
@@ -275,18 +292,33 @@ class MatchEngine:
         needed_a = target_size_a - len(gk_a)
         
         best_diff, best_combination = float('inf'), None
+        # Análise Combinatória: Cria todos os cenários possíveis de times
         all_combinations = list(combinations(range(len(players_calc)), max(0, needed_a)))
         
         random.shuffle(all_combinations)
         if len(all_combinations) > 1000:
-            all_combinations = all_combinations[:1000]
+            all_combinations = all_combinations[:1000] # Limite de processamento seguro
 
+        # NOVA LÓGICA DE ENGENHARIA: "FORÇA EFETIVA" (Multiplicador de Capacidade: 5)
         for combo in all_combinations:
             team_a_indices = set(combo)
             team_b_indices = set(range(len(players_calc))) - team_a_indices
-            sum_a = sum(p['rating_calc'] for i, p in enumerate(players_calc) if i in team_a_indices) + sum(g['rating_calc'] for g in gk_calc_a)
-            sum_b = sum(p['rating_calc'] for i, p in enumerate(players_calc) if i in team_b_indices) + sum(g['rating_calc'] for g in gk_calc_b)
-            diff = abs(sum_a - sum_b)
+            
+            # 1. Soma Bruta do Elenco
+            sum_a_raw = sum(p['rating_calc'] for i, p in enumerate(players_calc) if i in team_a_indices) + sum(g['rating_calc'] for g in gk_calc_a)
+            sum_b_raw = sum(p['rating_calc'] for i, p in enumerate(players_calc) if i in team_b_indices) + sum(g['rating_calc'] for g in gk_calc_b)
+            
+            # 2. Contagem do Elenco (Quem veio pro jogo)
+            len_a = len(team_a_indices) + len(gk_calc_a)
+            len_b = len(team_b_indices) + len(gk_calc_b)
+            
+            # 3. Normalização: Traduz o elenco para a Força de 5 jogadores atuando simultaneamente
+            forca_efetiva_a = (sum_a_raw / len_a) * 5 if len_a > 0 else 0
+            forca_efetiva_b = (sum_b_raw / len_b) * 5 if len_b > 0 else 0
+            
+            # 4. Diferença baseada no impacto real da quadra (Evita a criação de 'Panelinhas')
+            diff = abs(forca_efetiva_a - forca_efetiva_b)
+            
             if diff < best_diff:
                 best_diff = diff
                 best_combination = (team_a_indices, team_b_indices)
@@ -303,6 +335,22 @@ st.title("🧠 Sorteador Ajax")
 
 st.markdown("""
     <style>
+    /* ==========================================================
+       LEGENDA DE CORES DA INTERFACE (CSS)
+       ----------------------------------------------------------
+       Você pode alterar os códigos HEX (#) abaixo para customizar:
+       
+       #1e1e1e : Cinza Escuro (Cor de fundo das caixas de texto/inputs)
+       #444444 : Cinza Médio (Borda das caixas de texto)
+       #ffffff : Branco (Cor do texto principal digitado)
+       #aaaaaa : Cinza Claro (Texto fantasma/placeholder antes de digitar)
+       #8b5cf6 : Roxo Vibrante (Fundo do botão 'Finalizar Partida')
+       #7c3aed : Roxo Escuro (Fundo do botão 'Finalizar Partida' ao passar o mouse)
+       #00d4ff : Azul Claro Neon (Identidade visual do Time AZUL)
+       #8a2be2 : Roxo/Lilás Neon (Identidade visual do Time ROXO)
+       ========================================================== */
+       
+    /* Estilização padrão de inputs textuais e numéricos */
     div[data-testid="stTextInput"] div[data-baseweb="input"],
     div[data-testid="stNumberInput"] div[data-baseweb="input"] {
         background-color: #1e1e1e !important; 
@@ -318,6 +366,19 @@ st.markdown("""
     div[data-testid="stTextInput"] input::placeholder {
         color: #aaaaaa !important; 
         -webkit-text-fill-color: #aaaaaa !important;
+    }
+
+    /* CORREÇÃO DO BUG DO BOTÃO BRANCO:
+       Força a cor do botão específico dentro de um formulário. */
+    div[data-testid="stFormSubmitButton"] button {
+        background-color: #8b5cf6 !important; 
+        color: #ffffff !important; 
+        border: none !important;
+        font-weight: bold !important;
+    }
+    div[data-testid="stFormSubmitButton"] button:hover {
+        background-color: #7c3aed !important; 
+        color: #ffffff !important;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -336,6 +397,8 @@ with tab_audit:
 
 with tab_principal:
     pendente = obter_partida_pendente()
+    
+    # === TELA DE PLACAR DA PARTIDA EM ANDAMENTO ===
     if pendente:
         st.error("🚨 Existe uma partida aguardando o Placar Oficial!")
         
@@ -375,10 +438,12 @@ with tab_principal:
                     import time
                     time.sleep(1)
                     st.rerun()
-        st.stop() # Interrompe a renderização para focar apenas na partida pendente
+        st.stop() # Interrompe a renderização para não exibir o sorteador embaixo
 
+    # === TELA DE SORTEIO (NOVA PARTIDA) ===
     jogadores_base, goleiros_base = obter_base_de_jogadores()
     
+    # Validações de integridade de sessão (Session State)
     if 'visitantes_goleiros' in st.session_state and not isinstance(st.session_state.visitantes_goleiros, list):
         del st.session_state['visitantes_goleiros']
     if 'visitantes_list' in st.session_state and not isinstance(st.session_state.visitantes_list, list):
@@ -399,6 +464,7 @@ with tab_principal:
         
         if nome and nome not in st.session_state.visitantes_list:
             st.session_state.visitantes_list.append(nome)
+            # Dicionário de ELO inicial para visitantes com base no nível escolhido (1 a 5)
             st.session_state.visitantes_ratings[nome] = {1:850, 2:925, 3:1000, 4:1075, 5:1150}[nivel]
             
             if nome not in st.session_state.keys_presentes: 
@@ -453,7 +519,7 @@ with tab_principal:
                 st.markdown(f"<h3 style='color: {cor}; text-align: center; border-bottom: 2px solid {cor};'>{label}</h3>", unsafe_allow_html=True)
                 for j in time: st.write(f"**{'🧤' if j.get('goleiro') else '🏃'} {j['nome']}** \n`ELO: {j['rating']:.0f}`")
         st.markdown("---")
-        st.info(f"⚖️ Diferença Matemática: {st.session_state.res_gap:.1f} pontos.")
+        st.info(f"⚖️ Diferença Matemática: {st.session_state.res_gap:.1f} pontos de Força Efetiva.")
         
         total_hoje, ultimo_hora = obter_contagem_audit_hoje()
         if total_hoje > 1:
@@ -465,7 +531,7 @@ with tab_principal:
         for j in st.session_state.res_time_a: msg += f"{'🧤' if j.get('goleiro') else '🏃'} {j['nome']}\n"
         msg += f"\n🟣 *TIME ROXO*\n"
         for j in st.session_state.res_time_b: msg += f"{'🧤' if j.get('goleiro') else '🏃'} {j['nome']}\n"
-        msg += f"\n⚖️ *Desnível entre os times:* Apenas {st.session_state.res_gap:.1f} pontos de diferença na soma geral."
+        msg += f"\n⚖️ *Desnível entre os times:* Apenas {st.session_state.res_gap:.1f} pontos (Medido em Força Efetiva 5v5)."
         
         if total_hoje > 1:
             msg += f"\n\n🚨 *V.A.R. Cloud:* Sorteio nº {total_hoje} registrado hoje."
