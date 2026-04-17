@@ -16,6 +16,7 @@ import streamlit.components.v1 as components
 def padronizar_nome(nome):
     """
     Normaliza a string para atuar como Chave Primária segura no Banco de Dados.
+    Remove acentos, espaços extras e converte para Maiúsculo.
     """
     if not nome: return ""
     nome = str(nome).strip().upper()
@@ -51,6 +52,7 @@ def salvar_partida_pendente(time_a, time_b):
     ws.append_row(row)
     return partida_id
 
+# Proteção de Leitura (Cache de 60s) para evitar Erro 429
 @st.cache_data(ttl=60)
 def obter_partida_pendente():
     import time
@@ -67,15 +69,13 @@ def obter_partida_pendente():
                         t_azul_raw = str(r.get("Time_Azul", r.get("Time_A", "[]")))
                         t_roxo_raw = str(r.get("Time_Roxo", r.get("Time_B", "[]")))
                         
-                        # POKA-YOKE DA CAUSA-RAIZ: 
-                        # Força o dado a ser um JSON estrito para evitar falha com 'false' vs 'False'
+                        # Tratamento de tipagem robusto (Poka-Yoke de JSON)
                         t_azul_raw = t_azul_raw.replace("'", '"').replace("False", "false").replace("True", "true")
                         t_roxo_raw = t_roxo_raw.replace("'", '"').replace("False", "false").replace("True", "true")
                         
                         ta = json.loads(t_azul_raw)
                         tb = json.loads(t_roxo_raw)
                     except Exception as e:
-                        print(f"Erro no parser JSON: {e}")
                         ta, tb = [], []
                         
                     return {
@@ -97,6 +97,7 @@ def obter_partida_pendente():
 # MÓDULO 2: AUDITORIA E V.A.R.
 # ==============================================================================
 
+@st.cache_data(ttl=60)
 def ler_auditoria_cloud():
     try:
         sh = get_gspread_client()
@@ -141,12 +142,13 @@ def registrar_auditoria_cloud(gap, time_a, time_b):
         rx = ", ".join([padronizar_nome(p["nome"]) for p in time_b])
         status = "Autêntico" if sorteio_num == 1 else "Suspeito"
         ws.append_row([agora, sorteio_num, status, gap, az, rx])
+        ler_auditoria_cloud.clear() # Limpa cache do VAR para atualização instantânea
         return sorteio_num
     except:
         return 1
 
 # ==============================================================================
-# MÓDULO 3: MOTOR DE ELO E FECHAMENTO DE PARTIDA (BLINDADO CONTRA ERRO 429)
+# MÓDULO 3: MOTOR DE ELO E BASE DE JOGADORES (BLINDADOS)
 # ==============================================================================
 
 def finalizar_partida(row_index, gols_a, gols_b, time_a, time_b):
@@ -154,13 +156,11 @@ def finalizar_partida(row_index, gols_a, gols_b, time_a, time_b):
     sh = get_gspread_client()
     
     try:
-        # POKA-YOKE 1: Tenta ler o Ranking ANTES de fazer qualquer gravação.
-        # Se a API do Google estiver bloqueada (Erro 429), ele cai no except e aborta em segurança.
+        # Transação Atômica: Se o banco estiver travado, quebra aqui sem apagar nada
         ws_rank = sh.worksheet("Ranking_IA")
         records = ws_rank.get_all_records()
         ranking_db = {padronizar_nome(r['Nome']): r for r in records}
         
-        # OTIMIZAÇÃO: Se chegou aqui, a conexão está liberada. Grava o Histórico.
         ws_hist = sh.worksheet("Historico_Partidas")
         ws_hist.update(range_name=f"E{row_index}:G{row_index}", values=[["Finalizada", gols_a, gols_b]])
         time.sleep(1.0) # Respiro para a API
@@ -201,14 +201,45 @@ def finalizar_partida(row_index, gols_a, gols_b, time_a, time_b):
         for _, s in sorted(ranking_db.items(), key=lambda x: float(x[1]['Rating']), reverse=True):
             linhas.append([s["Nome"], s["Posicao"], s["Rating"], s["Jogos"], s["Vitorias"], s["Derrotas"]])
         
-        # POKA-YOKE 2: Gravação segura do Ranking com respiro
         time.sleep(1.0)
         ws_rank.update(values=linhas, range_name="A1")
 
     except Exception as e:
-        # Trava o sistema visualmente e impede a perda de dados
-        st.error("🚨 O Google bloqueou a operação por limite de acessos da API. Seus dados estão seguros. Aguarde 60 segundos e clique em Finalizar novamente.")
+        # Tratamento de Exceção Elegante (Evita Crash de Tela Vermelha)
+        st.error("🚨 O Google bloqueou a operação por limite temporário de rede. Seus dados estão seguros. Aguarde 60 segundos e tente novamente.")
         st.stop()
+
+# FUNÇÕES REINJETADAS PARA CORRIGIR O NAME-ERROR E GARANTIR O CACHE
+@st.cache_data(ttl=60)
+def obter_ratings_atuais():
+    try:
+        sh = get_gspread_client()
+        ws_rank = sh.worksheet("Ranking_IA")
+        records = ws_rank.get_all_records()
+        return {padronizar_nome(r['Nome']): float(r['Rating']) for r in records}
+    except:
+        return {}
+
+@st.cache_data(ttl=60)
+def obter_base_de_jogadores():
+    jog_linha, gols = [], []
+    try:
+        sh = get_gspread_client()
+        ws_base = sh.worksheet("Base_Jogadores")
+        records = ws_base.get_all_records()
+        for r in records:
+            nome_raw = str(r.get("Nome", ""))
+            cat = str(r.get("Categoria", "")).strip()
+            status = str(r.get("Status", "")).strip()
+            nome_clean = padronizar_nome(nome_raw)
+            if not nome_clean or cat.lower() in ["fornecedor", "dm"] or status.lower() in ["inativo", "dm"]: 
+                continue
+            if cat.lower() == "goleiro": gols.append(nome_clean)
+            else: jog_linha.append(nome_clean)
+    except:
+        pass
+    return jog_linha, gols
+
 # ==============================================================================
 # MÓDULO 4: MOTOR DE ELO MATEMÁTICO
 # ==============================================================================
@@ -295,7 +326,9 @@ tab_principal, tab_audit = st.tabs(["⚙️ Sorteador Oficial", "🕵️‍♂�
 
 with tab_audit:
     st.markdown("### 📋 Auditoria de Sorteios")
-    if st.button("🔄 Atualizar Log"): st.rerun()
+    if st.button("🔄 Atualizar Log", use_container_width=True): 
+        ler_auditoria_cloud.clear()
+        st.rerun()
     records_audit = ler_auditoria_cloud()
     if records_audit:
         df_audit = pd.DataFrame(records_audit).tail(30)
@@ -305,36 +338,44 @@ with tab_principal:
     pendente = obter_partida_pendente()
     if pendente:
         st.error("🚨 Existe uma partida aguardando o Placar Oficial!")
-        colA, colB = st.columns(2)
-        with colA:
-            st.markdown("<h3 style='color: #00d4ff;'>🔵 T. AZUL</h3>", unsafe_allow_html=True)
-            for j in pendente['time_a']: st.markdown(f"<span style='color:#ccc; font-size:14px;'>{'🧤' if j.get('goleiro') else '🏃'} {j['nome']}</span>", unsafe_allow_html=True)
-            gols_a = st.number_input("Gols Azul", min_value=0, max_value=50, value=0, key="gols_a")
-        with colB:
-            st.markdown("<h3 style='color: #8a2be2;'>🟣 T. ROXO</h3>", unsafe_allow_html=True)
-            for j in pendente['time_b']: st.markdown(f"<span style='color:#ccc; font-size:14px;'>{'🧤' if j.get('goleiro') else '🏃'} {j['nome']}</span>", unsafe_allow_html=True)
-            gols_b = st.number_input("Gols Roxo", min_value=0, max_value=50, value=0, key="gols_b")
+        
+        # IMPLEMENTAÇÃO DO BUFFER DE PLACAR (ANTI-ENGASGO DA INTERFACE)
+        with st.form("fechamento_placar", clear_on_submit=False):
+            colA, colB = st.columns(2)
+            with colA:
+                st.markdown("<h3 style='color: #00d4ff;'>🔵 T. AZUL</h3>", unsafe_allow_html=True)
+                for j in pendente['time_a']: st.markdown(f"<span style='color:#ccc; font-size:14px;'>{'🧤' if j.get('goleiro') else '🏃'} {j['nome']}</span>", unsafe_allow_html=True)
+                gols_a = st.number_input("Gols Azul", min_value=0, max_value=50, value=0, key="gols_a")
+            with colB:
+                st.markdown("<h3 style='color: #8a2be2;'>🟣 T. ROXO</h3>", unsafe_allow_html=True)
+                for j in pendente['time_b']: st.markdown(f"<span style='color:#ccc; font-size:14px;'>{'🧤' if j.get('goleiro') else '🏃'} {j['nome']}</span>", unsafe_allow_html=True)
+                gols_b = st.number_input("Gols Roxo", min_value=0, max_value=50, value=0, key="gols_b")
+                
+            submit_placar = st.form_submit_button("🏆 FINALIZAR PARTIDA E CALCULAR ELO", use_container_width=True)
             
-        if st.button("🏆 Finalizar Partida", use_container_width=True):
-            with st.spinner("Computando resultados e salvando Ranking (Aguarde)..."):
-                finalizar_partida(pendente["row_index"], gols_a, gols_b, pendente["time_a"], pendente["time_b"])
-                obter_partida_pendente.clear()
-                obter_ratings_atuais.clear()
-                
-                st.success("ELO Recalculado com sucesso! Retornando...")
-                
-                chaves_para_limpar = [
-                    'res_time_a', 'res_time_b', 'res_gap', 'keys_presentes', 
-                    'visitantes_list', 'visitantes_goleiros', 'visitantes_ratings', 'match_saved'
-                ]
-                for c in chaves_para_limpar:
-                    if c in st.session_state: 
-                        del st.session_state[c]
-                
-                import time
-                time.sleep(1)
-                st.rerun()
-        st.stop()
+            if submit_placar:
+                with st.spinner("Computando resultados e salvando Ranking (Aguarde)..."):
+                    finalizar_partida(pendente["row_index"], gols_a, gols_b, pendente["time_a"], pendente["time_b"])
+                    
+                    # Limpeza compulsória de cache pós-salvamento
+                    obter_partida_pendente.clear()
+                    obter_ratings_atuais.clear()
+                    obter_base_de_jogadores.clear()
+                    
+                    st.success("ELO Recalculado com sucesso! Retornando...")
+                    
+                    chaves_para_limpar = [
+                        'res_time_a', 'res_time_b', 'res_gap', 'keys_presentes', 
+                        'visitantes_list', 'visitantes_goleiros', 'visitantes_ratings', 'match_saved'
+                    ]
+                    for c in chaves_para_limpar:
+                        if c in st.session_state: 
+                            del st.session_state[c]
+                    
+                    import time
+                    time.sleep(1)
+                    st.rerun()
+        st.stop() # Interrompe a renderização para focar apenas na partida pendente
 
     jogadores_base, goleiros_base = obter_base_de_jogadores()
     
@@ -449,6 +490,8 @@ with tab_principal:
                 salvar_partida_pendente(st.session_state.res_time_a, st.session_state.res_time_b)
                 import time
                 time.sleep(2.0)
+                
+                # Limpa cache para que o app detecte a partida no próximo reload
                 obter_partida_pendente.clear()
                 
                 chaves_para_limpar = [
