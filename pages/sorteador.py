@@ -146,99 +146,69 @@ def registrar_auditoria_cloud(gap, time_a, time_b):
         return 1
 
 # ==============================================================================
-# MÓDULO 3: MOTOR DE ELO E FECHAMENTO DE PARTIDA (OTIMIZADO)
+# MÓDULO 3: MOTOR DE ELO E FECHAMENTO DE PARTIDA (BLINDADO CONTRA ERRO 429)
 # ==============================================================================
 
 def finalizar_partida(row_index, gols_a, gols_b, time_a, time_b):
-    """Atualiza o placar e recalcula o ELO. Otimizado para evitar o Rate Limit do Google."""
     import time
     sh = get_gspread_client()
-    ws_hist = sh.worksheet("Historico_Partidas")
-    
-    # 1. Update do Histórico
-    ws_hist.update(range_name=f"E{row_index}:G{row_index}", values=[["Finalizada", gols_a, gols_b]])
-    
-    # POKA-YOKE CONTRA RATE LIMIT
-    time.sleep(1.5)
     
     try:
+        # POKA-YOKE 1: Tenta ler o Ranking ANTES de fazer qualquer gravação.
+        # Se a API do Google estiver bloqueada (Erro 429), ele cai no except e aborta em segurança.
         ws_rank = sh.worksheet("Ranking_IA")
         records = ws_rank.get_all_records()
         ranking_db = {padronizar_nome(r['Nome']): r for r in records}
+        
+        # OTIMIZAÇÃO: Se chegou aqui, a conexão está liberada. Grava o Histórico.
+        ws_hist = sh.worksheet("Historico_Partidas")
+        ws_hist.update(range_name=f"E{row_index}:G{row_index}", values=[["Finalizada", gols_a, gols_b]])
+        time.sleep(1.0) # Respiro para a API
+        
+        diff = abs(gols_a - gols_b)
+        k_factor = 32 if diff < 3 else (48 if diff < 5 else 64)
+        res_a = 1 if gols_a > gols_b else (0.5 if gols_a == gols_b else 0)
+        res_b = 1 - res_a
+        
+        def get_rating(nome):
+            return float(ranking_db.get(padronizar_nome(nome), {}).get('Rating', 1000))
+
+        media_a = sum(get_rating(p['nome']) for p in time_a) / max(len(time_a), 1)
+        media_b = sum(get_rating(p['nome']) for p in time_b) / max(len(time_b), 1)
+        
+        def calc_novo_elo(jogador, media_adv, res):
+            nome_clean = padronizar_nome(jogador['nome'])
+            stats = ranking_db.get(nome_clean, {
+                "Nome": nome_clean, 
+                "Posicao": ("Goleiro" if jogador.get('goleiro') else "Linha"), 
+                "Rating": 1000, "Jogos": 0, "Vitorias": 0, "Derrotas": 0
+            })
+            
+            elo_atual = float(stats["Rating"])
+            exp = 1 / (1 + 10 ** ((media_adv - elo_atual) / 400))
+            
+            stats["Rating"] = round(elo_atual + k_factor * (res - exp))
+            stats["Jogos"] = int(stats["Jogos"]) + 1
+            if res == 1: stats["Vitorias"] = int(stats["Vitorias"]) + 1
+            elif res == 0: stats["Derrotas"] = int(stats["Derrotas"]) + 1
+            ranking_db[nome_clean] = stats
+            
+        for p in time_a: calc_novo_elo(p, media_b, res_a)
+        for p in time_b: calc_novo_elo(p, media_a, res_b)
+        
+        headers = ["Nome", "Posicao", "Rating", "Jogos", "Vitorias", "Derrotas"]
+        linhas = [headers]
+        for _, s in sorted(ranking_db.items(), key=lambda x: float(x[1]['Rating']), reverse=True):
+            linhas.append([s["Nome"], s["Posicao"], s["Rating"], s["Jogos"], s["Vitorias"], s["Derrotas"]])
+        
+        # POKA-YOKE 2: Gravação segura do Ranking com respiro
+        time.sleep(1.0)
+        ws_rank.update(values=linhas, range_name="A1")
+
     except Exception as e:
-        st.warning(f"⚠️ Nota: Não foi possível ler o Ranking IA agora. Usando base de 1000 pts. Erro: {str(e)}")
-        ranking_db = {}
-    
-    diff = abs(gols_a - gols_b)
-    k_factor = 32 if diff < 3 else (48 if diff < 5 else 64)
-    res_a = 1 if gols_a > gols_b else (0.5 if gols_a == gols_b else 0)
-    res_b = 1 - res_a
-    
-    def get_rating(nome):
-        return float(ranking_db.get(padronizar_nome(nome), {}).get('Rating', 1000))
-
-    media_a = sum(get_rating(p['nome']) for p in time_a) / max(len(time_a), 1)
-    media_b = sum(get_rating(p['nome']) for p in time_b) / max(len(time_b), 1)
-    
-    def calc_novo_elo(jogador, media_adv, res):
-        nome_clean = padronizar_nome(jogador['nome'])
-        stats = ranking_db.get(nome_clean, {
-            "Nome": nome_clean, 
-            "Posicao": ("Goleiro" if jogador.get('goleiro') else "Linha"), 
-            "Rating": 1000, "Jogos": 0, "Vitorias": 0, "Derrotas": 0
-        })
-        
-        elo_atual = float(stats["Rating"])
-        exp = 1 / (1 + 10 ** ((media_adv - elo_atual) / 400))
-        
-        stats["Rating"] = round(elo_atual + k_factor * (res - exp))
-        stats["Jogos"] = int(stats["Jogos"]) + 1
-        if res == 1: stats["Vitorias"] = int(stats["Vitorias"]) + 1
-        elif res == 0: stats["Derrotas"] = int(stats["Derrotas"]) + 1
-        ranking_db[nome_clean] = stats
-        
-    # Processa os jogadores usando a decodificação correta que recebemos das listas
-    for p in time_a: calc_novo_elo(p, media_b, res_a)
-    for p in time_b: calc_novo_elo(p, media_a, res_b)
-    
-    headers = ["Nome", "Posicao", "Rating", "Jogos", "Vitorias", "Derrotas"]
-    linhas = [headers]
-    for _, s in sorted(ranking_db.items(), key=lambda x: float(x[1]['Rating']), reverse=True):
-        linhas.append([s["Nome"], s["Posicao"], s["Rating"], s["Jogos"], s["Vitorias"], s["Derrotas"]])
-    
-    time.sleep(1.0)
-    ws_rank.update(values=linhas, range_name="A1")
-
-@st.cache_data(ttl=60)
-def obter_ratings_atuais():
-    try:
-        sh = get_gspread_client()
-        ws_rank = sh.worksheet("Ranking_IA")
-        records = ws_rank.get_all_records()
-        return {padronizar_nome(r['Nome']): float(r['Rating']) for r in records}
-    except:
-        return {}
-
-@st.cache_data(ttl=60)
-def obter_base_de_jogadores():
-    jog_linha, gols = [], []
-    try:
-        sh = get_gspread_client()
-        ws_base = sh.worksheet("Base_Jogadores")
-        records = ws_base.get_all_records()
-        for r in records:
-            nome_raw = str(r.get("Nome", ""))
-            cat = str(r.get("Categoria", "")).strip()
-            status = str(r.get("Status", "")).strip()
-            nome_clean = padronizar_nome(nome_raw)
-            if not nome_clean or cat.lower() in ["fornecedor", "dm"] or status.lower() in ["inativo", "dm"]: 
-                continue
-            if cat.lower() == "goleiro": gols.append(nome_clean)
-            else: jog_linha.append(nome_clean)
-    except:
-        pass
-    return jog_linha, gols
-
+        # Trava o sistema visualmente e impede a perda de dados
+        st.error("🚨 O Google bloqueou a operação por limite de acessos da API. Seus dados estão seguros. Aguarde 60 segundos e clique em Finalizar novamente.")
+        st.stop()
 # ==============================================================================
 # MÓDULO 4: MOTOR DE ELO MATEMÁTICO
 # ==============================================================================
