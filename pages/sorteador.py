@@ -277,7 +277,7 @@ class MatchEngine:
         players_calc = []
         for p in players_list:
             p_copy = p.copy()
-            variacao = random.uniform(0.95, 1.05)
+            variacao = random.uniform(0.95, 1.01)
             p_copy['rating_calc'] = float(p.get('rating', 1000)) * variacao
             players_calc.append(p_copy)
             
