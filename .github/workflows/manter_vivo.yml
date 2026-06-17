@@ -1,55 +1,220 @@
 name: Manter App da Patota Vivo
+
 on:
   schedule:
     - cron: '17 3,9,15,21 * * *'
   workflow_dispatch:
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  STREAMLIT_URL: "https://patota.streamlit.app/"
+
+concurrency:
+  group: manter-patota-vivo
+  cancel-in-progress: true
+
 jobs:
   ping-websocket:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+
     steps:
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.10'
-          
-      - name: Instalar Dependências e Motor de Renderização (Playwright)
+
+      - name: Instalar Dependências e Motor de Renderização
         run: |
+          python -m pip install --upgrade pip
           pip install playwright
           playwright install --with-deps chromium
 
-      - name: Executar Simulação de Usuário (Headless Browser)
+      - name: Executar Simulação Real de Usuário
         run: |
-          python -c "
-          from playwright.sync_api import sync_playwright
+          python - <<'PY'
+          from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+          import os
           import time
           import random
           import sys
-          
-          # 1. Jitter para camuflagem de WAF
-          delay = random.randint(0, 1800)
-          print(f'Aguardando {delay} segundos (Jitter)...')
+          import re
+
+          url = os.environ["STREAMLIT_URL"]
+
+          # Jitter operacional para não executar sempre no mesmo segundo
+          delay = random.randint(20, 300)
+          print(f"Aguardando {delay} segundos de jitter...")
           time.sleep(delay)
-          
-          # 2. Inicialização do Navegador Virtual
+
+          def ler_body(page):
+              try:
+                  return page.locator("body").inner_text(timeout=30000)
+              except Exception as e:
+                  print(f"Falha ao ler o corpo da página: {e}")
+                  return ""
+
+          def esta_dormindo(texto):
+              texto = texto.lower()
+              indicadores = [
+                  "zzzz",
+                  "gone to sleep",
+                  "this app has gone to sleep",
+                  "would you like to wake it back up",
+                  "yes, get this app back up"
+              ]
+              return any(indicador in texto for indicador in indicadores)
+
+          def tentar_acordar(page):
+              print("Tentando clicar no botão de wake-up...")
+
+              # Tentativa 1: seletor por função de botão
+              try:
+                  page.get_by_role(
+                      "button",
+                      name=re.compile(r"Yes,\s*get this app back up!?", re.I)
+                  ).click(timeout=30000, force=True)
+
+                  print("Clique realizado pelo seletor get_by_role.")
+                  return True
+              except Exception as e:
+                  print(f"get_by_role não clicou: {e}")
+
+              # Tentativa 2: qualquer botão contendo o texto
+              try:
+                  botao = page.locator("button").filter(
+                      has_text=re.compile(r"get this app back up", re.I)
+                  )
+
+                  print(f"Botões encontrados por texto: {botao.count()}")
+
+                  if botao.count() > 0:
+                      botao.first.click(timeout=30000, force=True)
+                      print("Clique realizado pelo locator button/filter.")
+                      return True
+              except Exception as e:
+                  print(f"button/filter não clicou: {e}")
+
+              # Tentativa 3: texto visível
+              try:
+                  texto = page.get_by_text(
+                      re.compile(r"Yes,\s*get this app back up!?", re.I)
+                  )
+
+                  print(f"Textos encontrados: {texto.count()}")
+
+                  if texto.count() > 0:
+                      texto.first.click(timeout=30000, force=True)
+                      print("Clique realizado pelo get_by_text.")
+                      return True
+              except Exception as e:
+                  print(f"get_by_text não clicou: {e}")
+
+              # Tentativa 4: JavaScript direto
+              try:
+                  resultado = page.evaluate("""
+                  () => {
+                      const elementos = Array.from(document.querySelectorAll('button, a, [role="button"]'));
+
+                      const alvo = elementos.find(el =>
+                          (el.innerText || el.textContent || '')
+                          .toLowerCase()
+                          .includes('get this app back up')
+                      );
+
+                      if (alvo) {
+                          alvo.click();
+                          return true;
+                      }
+
+                      return false;
+                  }
+                  """)
+
+                  print(f"Clique via JavaScript: {resultado}")
+
+                  if resultado:
+                      return True
+              except Exception as e:
+                  print(f"JavaScript não clicou: {e}")
+
+              return False
+
           try:
               with sync_playwright() as p:
-                  browser = p.chromium.launch(headless=True)
-                  page = browser.new_page()
-                  
-                  print('Acessando a aplicação e aguardando renderização do DOM...')
-                  # wait_until='networkidle' garante que o JavaScript foi processado e o WebSocket abriu
-                  page.goto('https://patota.streamlit.app/', wait_until='networkidle', timeout=60000)
-                  
-                  # 3. Sustentação da Conexão
-                  print('DOM carregado. Mantendo o WebSocket aberto por 15 segundos para registro na nuvem...')
+                  browser = p.chromium.launch(
+                      headless=True,
+                      args=[
+                          "--no-sandbox",
+                          "--disable-dev-shm-usage"
+                      ]
+                  )
+
+                  page = browser.new_page(
+                      viewport={"width": 1366, "height": 768},
+                      user_agent=(
+                          "Mozilla/5.0 (X11; Linux x86_64) "
+                          "AppleWebKit/537.36 (KHTML, like Gecko) "
+                          "Chrome/120.0.0.0 Safari/537.36"
+                      )
+                  )
+
+                  print(f"Acessando aplicação: {url}")
+
+                  page.goto(
+                      url,
+                      wait_until="domcontentloaded",
+                      timeout=90000
+                  )
+
+                  print("Aguardando a tela renderizar...")
                   time.sleep(15)
-                  
-                  print('Status: ONLINE. Interação via WebSocket validada com sucesso.')
+
+                  body_text = ler_body(page)
+
+                  print("Trecho inicial da página:")
+                  print(body_text[:700])
+
+                  if esta_dormindo(body_text):
+                      print("App está dormindo. Tentando acordar...")
+
+                      clicou = tentar_acordar(page)
+
+                      if not clicou:
+                          print("ERRO: app está dormindo, mas o botão não pôde ser clicado.")
+                          browser.close()
+                          sys.exit(1)
+
+                      print("Botão acionado. Aguardando inicialização do Streamlit...")
+                      time.sleep(150)
+
+                      print("Recarregando após wake-up...")
+                      page.reload(wait_until="domcontentloaded", timeout=90000)
+                      time.sleep(30)
+
+                  else:
+                      print("App não parece estar dormindo. Mantendo conexão ativa...")
+                      time.sleep(45)
+
+                  print("Validação final...")
+                  final_text = ler_body(page)
+
+                  if esta_dormindo(final_text):
+                      print("ERRO: O app ainda parece estar em hibernação após tentativa de wake-up.")
+                      print("Trecho final:")
+                      print(final_text[:1000])
+                      browser.close()
+                      sys.exit(1)
+
+                  print("Status: ONLINE. Aplicação acessada e validada com sucesso.")
                   browser.close()
                   sys.exit(0)
-                  
-          except Exception as e:
-              print(f'Falha crítica na renderização ou tempo limite excedido: {e}')
+
+          except PlaywrightTimeoutError as e:
+              print(f"Timeout no Playwright: {e}")
               sys.exit(1)
-          "
+
+          except Exception as e:
+              print(f"Falha crítica durante execução: {e}")
+              sys.exit(1)
+          PY
